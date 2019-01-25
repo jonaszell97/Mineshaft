@@ -1,0 +1,24 @@
+
+class Block<let transparent: i1 = false, let hardness: i32 = 0> {
+    let textures: list<string> = [
+        // right, left, top, bottom, front, back
+    ]
+}
+
+def Air : Block<true>
+def Dirt : Block<false, 3>
+
+def Grass : Block<false, 3> {
+    textures = [
+        "grass_side",
+        "grass_side",
+        "grass_top",
+        "dirt",
+        "grass_side",
+        "grass_side"
+    ]
+}
+
+def Stone : Block<false, 10>
+def Bedrock : Block<false, 1>
+def MoonStone : Block<false, 10>

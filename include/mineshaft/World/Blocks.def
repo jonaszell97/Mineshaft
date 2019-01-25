@@ -1,0 +1,13 @@
+#ifndef MC_BLOCK
+   #define MC_BLOCK(NAME)
+#endif
+
+MC_BLOCK(Air)
+MC_BLOCK(Dirt)
+MC_BLOCK(Grass)
+MC_BLOCK(Stone)
+MC_BLOCK(Bedrock)
+MC_BLOCK(MoonStone)
+
+
+#undef MC_BLOCK

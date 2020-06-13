@@ -1,7 +1,3 @@
-//
-// Created by Jonas Zell on 2019-01-24.
-//
-
 #ifndef MINESHAFT_TEXTUREARRAY_H
 #define MINESHAFT_TEXTUREARRAY_H
 
@@ -27,7 +23,7 @@ private:
    GLuint glTextureKind;
 
 public:
-   friend class Context;
+   friend class Application;
 
    /// Create a texture array.
    static TextureArray create(BasicTexture::Kind textureKind,

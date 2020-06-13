@@ -1,9 +1,7 @@
-//
-// Created by Jonas Zell on 2019-01-17.
-//
-
 #ifndef MINEKAMPF_UTILS_H
 #define MINEKAMPF_UTILS_H
+
+#include "mineshaft/Config.h"
 
 #include <GL/glew.h>
 #include <glm/glm.hpp>
@@ -40,6 +38,33 @@ template <>
 struct hash<glm::vec3>
 {
    std::size_t operator()(const glm::vec3& k) const noexcept
+   {
+      std::size_t hashVal = 0;
+      hash_combine(hashVal, k.x);
+      hash_combine(hashVal, k.y);
+      hash_combine(hashVal, k.z);
+
+      return hashVal;
+   }
+};
+
+template <>
+struct hash<::mc::ChunkPosition>
+{
+   std::size_t operator()(const ::mc::ChunkPosition& k) const noexcept
+   {
+      std::size_t hashVal = 0;
+      hash_combine(hashVal, k.x);
+      hash_combine(hashVal, k.z);
+
+      return hashVal;
+   }
+};
+
+template <>
+struct hash<::mc::WorldPosition>
+{
+   std::size_t operator()(const ::mc::WorldPosition& k) const noexcept
    {
       std::size_t hashVal = 0;
       hash_combine(hashVal, k.x);
@@ -103,6 +128,12 @@ glm::vec<L, T, Q> triIntersect(const glm::vec<L, T, Q> &ro,
    return glm::vec<L, T, Q>(t, u, v);
 }
 
+template<class FP>
+inline double rdAwayFromZero(FP f)
+{
+   return f < 0 ? std::floor(f) : std::ceil(f);
+}
+
 float float_rand(float min, float max);
 
 glm::vec4 randomColor();
@@ -118,6 +149,10 @@ public:
    explicit Timer(llvm::StringRef taskName, llvm::raw_ostream *OS = nullptr);
    ~Timer();
 };
+
+llvm::raw_ostream &operator<<(llvm::raw_ostream &OS, const ScenePosition &pos);
+llvm::raw_ostream &operator<<(llvm::raw_ostream &OS, const WorldPosition &pos);
+llvm::raw_ostream &operator<<(llvm::raw_ostream &OS, const ChunkPosition &pos);
 
 } // namespace mc
 

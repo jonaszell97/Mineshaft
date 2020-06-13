@@ -1,29 +1,37 @@
-//
-// Created by Jonas Zell on 2019-01-23.
-//
-
 #ifndef MINESHAFT_WORLD_H
 #define MINESHAFT_WORLD_H
 
 #include "mineshaft/World/Chunk.h"
 
+#include <unordered_map>
+#include <unordered_set>
+
 namespace mc {
+
+class Entity;
+class WorldGenerator;
 
 /// Stores options for world and terrain generation.
 struct WorldGenOptions {
    enum WorldType {
       /// A completely flat world.
       FLAT,
+
+      /// A default world.
+      DEFAULT,
    };
 
    /// The world type.
-   WorldType type = FLAT;
+   WorldType type = DEFAULT;
+
+   /// The seed.
+   int seed = 69;
 
    /// The y coordinate of sea level.
    int seaY = 0;
 
    /// The y coordinate of the beginning of the dirt level.
-   int dirtY = -5;
+   int dirtLayers = 5;
 
    /// The y coordinate of the cloud layer.
    int cloudY = 100;
@@ -54,7 +62,7 @@ struct WorldSegment {
 
 class World {
    /// Reference to the context instance.
-   Context &Ctx;
+   Application &app;
 
    /// Storage for currently loaded world segments. This is structured like a
    /// two-dimensional array.
@@ -72,6 +80,18 @@ class World {
    /// The chunk that rendered area is centered around.
    Chunk *centerChunk = nullptr;
 
+   /// The block that is currently looked at.
+   const Block *focusedBlock = nullptr;
+
+   /// The terrain generated used in this world.
+   WorldGenerator *worldGenerator = nullptr;
+
+   /// The entities contained in the world.
+   std::vector<Entity*> entities;
+
+   /// The entities in the currently loaded chunks.
+   std::unordered_set<Entity*> activeEntities;
+
    /// The lowest loaded x segment coordinate.
    int minX = 0;
 
@@ -84,15 +104,8 @@ class World {
    /// The highest loaded z segment coordinate.
    int maxZ = 0;
 
-   /// Options for world generation.
-   WorldGenOptions options;
-
    /// Generate the terrain of the given segment.
    void genWorld(WorldSegment &seg);
-
-   /// Generate a flat world in the given segment.
-   void genFlat(WorldSegment &seg);
-   void genFlatChunk(Chunk &chunk);
 
    struct ChunkIndex {
       int segmentX;
@@ -114,16 +127,47 @@ class World {
    /// Load a chunk as the center of the visible area.
    void loadChunk(Chunk *chunk);
 
+   // Update to a block that should be performed when the corresponding
+   // chunk is generated.
+   struct DelayedBlockUpdate {
+      WorldPosition pos;
+      Block block;
+
+      DelayedBlockUpdate(const WorldPosition &pos, Block &&block)
+         : pos(pos), block(std::move(block))
+      { }
+   };
+
+   // Block updates that should be performed when a chunk is generated.
+   std::unordered_map<ChunkPosition, std::vector<DelayedBlockUpdate>> blockUpdates;
+
 public:
    /// C'tor. Does not generate any terrain.
-   explicit World(Context &Ctx, const WorldGenOptions &options);
+   explicit World(Application &app);
    ~World();
+
+   /// Disable copying.
+   World(const World &w) = delete;
+   World &operator=(const World &w) = delete;
+
+   World(World &&w) noexcept;
+   World &operator=(World &&w) noexcept;
 
    /// \return A chunk at the specified coordinates.
    Chunk *getChunk(const ChunkPosition &chunkPos, bool initialize = true);
 
    /// \return A block, if its corresponding chunk is loaded.
-   const Block *getBlock(const WorldPosition &pos);
+   void updateBlock(const WorldPosition &pos, Block &&block,
+                    bool delayIfNecessary = true);
+
+   /// \return A block, if its corresponding chunk is loaded.
+   const Block *getBlock(const WorldPosition &pos) const;
+
+   /// \return The world generator.
+   WorldGenerator *getWorldGenerator() const { return worldGenerator; }
+
+   /// Set the world generator.
+   void setWorldGenerator(WorldGenerator *gen) { worldGenerator = gen; }
 
    enum BlockNeighbour {
       RightNeighbour,
@@ -145,13 +189,31 @@ public:
    WorldSegment *getSegment(int x, int z, bool initialize = true);
 
    /// Potentially update the rendered chunks based on the players position.
-   void updatePlayerPosition(const glm::vec3 &pos);
+   void updatePlayerPosition();
 
-   /// Update the visibility of chunks.
+   /// Update the visibility of chunks and entities.
    void updateVisibility();
 
    /// Get the currently rendered chunks.
    llvm::ArrayRef<Chunk*> getChunksToRender() const;
+
+   /// Register an entity.
+   void registerEntity(Entity *e);
+
+   /// \return The currently active entities.
+   const std::unordered_set<Entity*> &getActiveEntities() const { return activeEntities; }
+
+   /// \return The context instance.
+   Application &getApplication() const { return app; }
+
+   /// \return The block that is currently looked at.
+   const Block *getFocusedBlock() const { return focusedBlock; }
+
+   /// Set the currently focused block.
+   void setFocusedBlock(const Block *b) { focusedBlock = b; }
+
+   /// \return True if the given chunk is visible.
+   bool isChunkVisible(const ChunkPosition &pos) const;
 
 #ifndef NDEBUG
    void print(llvm::raw_ostream &OS) const;

@@ -1,0 +1,41 @@
+
+include "Blocks.tg"
+
+class Noise<let frequency: f32>
+
+class Cellular<frequency: f32 = 0.01,
+               let lacunarity: f32 = 2.0,
+               let gain: f32 = 0.5> : Noise<frequency>
+
+class Simplex<frequency: f32 = 0.01,
+              let lacunarity: f32 = 2.0,
+              let gain: f32 = 0.5> : Noise<frequency>
+
+class WeightedNoise<let noise: Noise, let weight: f32>
+
+class Biome<let frequency: i32> {
+    let noise: list<WeightedNoise>
+    let treeFrequency: i32 = 3
+}
+
+def Plains : Biome<8> {
+    noise = [
+        WeightedNoise<Simplex<0.01, 1.0, 0.5>, 0.2>
+        WeightedNoise<Simplex<0.03, 2.0, 0.5>, 0.8>
+    ]
+}
+
+def Forest : Biome<4> {
+    noise = [
+        WeightedNoise<Simplex<0.01, 1.0, 0.5>, 0.2>
+        WeightedNoise<Simplex<0.03, 2.0, 0.5>, 0.8>
+    ]
+
+    treeFrequency = 1
+}
+
+def Mountains : Biome<2> {
+    noise = [
+        WeightedNoise<Simplex<0.01, 2.0, 0.5>, 1.0>
+    ]
+}

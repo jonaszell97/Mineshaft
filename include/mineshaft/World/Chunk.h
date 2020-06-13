@@ -1,15 +1,13 @@
-//
-// Created by Jonas Zell on 2019-01-22.
-//
-
 #ifndef MINESHAFT_CHUNK_H
 #define MINESHAFT_CHUNK_H
 
 #include "mineshaft/Config.h"
+#include "mineshaft/Model/Model.h"
 #include "mineshaft/World/Block.h"
 
 namespace mc {
 
+enum class Biome : uint8_t;
 class Chunk;
 class World;
 
@@ -17,8 +15,13 @@ class ChunkSegment {
    /// The blocks in this chunk segment.
    unsigned char blockStorage[MC_BLOCKS_PER_CHUNK_SEGMENT * sizeof(Block)];
 
+   /// True if this segment contains only air.
+   bool airOnly = true;
+
 public:
    ChunkSegment();
+
+   friend class Chunk;
 
    /// \return The blocks contained in this chunk segment.
    llvm::ArrayRef<Block> getBlocks() const
@@ -37,16 +40,6 @@ public:
    /// \return The block at the specified chunk-local coordinate.
    const Block &getBlockAt(const BlockPositionChunk &pos) const;
    Block &getBlockAt(const BlockPositionChunk &pos);
-
-   const Block &getBlockAt(const WorldPosition &pos) const
-   {
-      return getBlockAt(getPositionInChunk(pos));
-   }
-
-   Block &getBlockAt(const WorldPosition &pos)
-   {
-      return getBlockAt(getPositionInChunk(pos));
-   }
 };
 
 class Chunk {
@@ -62,11 +55,21 @@ class Chunk {
    /// Z position of this chunk with respect to the world.
    int z;
 
+   /// This chunks biome.
+   Biome biome = (Biome)0;
+
    /// True if the visibility of block faces in this chunk has been calculated.
    bool visibilityCalculated = false;
 
    /// The bounding box of this chunk.
    BoundingBox boundingBox;
+
+   /// The chunk mesh of this chunk.
+   ChunkMesh chunkMesh;
+
+   Block *getBlockAt(const WorldPosition &pos);
+
+   void modifiedBlock(const BlockPositionChunk &pos);
 
 public:
    Chunk();
@@ -84,8 +87,11 @@ public:
    void initialize(World *world, int x, int z);
 
    /// \return The block at the specified chunk-local coordinate.
-   const Block &getBlockAt(const WorldPosition &pos) const;
-   Block &getBlockAt(const WorldPosition &pos);
+   const Block *getBlockAt(const WorldPosition &pos) const;
+
+   /// \return A block, if its corresponding chunk is loaded.
+   void updateBlock(const WorldPosition &pos, Block &&block,
+                    bool recheckVisibility = true);
 
    /// \return The bounding box of this chunk.
    const BoundingBox &getBoundingBox() { return boundingBox; }
@@ -93,11 +99,15 @@ public:
    /// Update the visibility of blocks in this chunk.
    void updateVisibility();
 
-   /// Update visibility of the blocks surrounding the given one.
-   void updateVisibility(Block &b);
+   /// \return This chunk's biome.
+   Biome getBiome() const { return biome; }
+
+   /// Set this chunk's biome.
+   void setBiome(Biome b) { biome = b; }
 
    /// \return true iff this chunk was modified.
    bool wasModified() const { return !visibilityCalculated; }
+   void setModified() { visibilityCalculated = false; }
 
    template<class segment_type, class block_type>
    struct block_iterator_t {
@@ -239,7 +249,10 @@ public:
    /// \return The chunk position.
    ChunkPosition getChunkPosition() const;
 
-   void fillLayerWith(Context &Ctx, int y, const Block &block);
+   /// \return The chunk mesh of this chunk.
+   const ChunkMesh &getChunkMesh() const { return chunkMesh; }
+
+   void fillLayerWith(Application &Ctx, int y, const Block &block, unsigned holeFrequency = 0);
 };
 
 } // namespace mc

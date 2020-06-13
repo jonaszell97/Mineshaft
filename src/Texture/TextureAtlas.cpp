@@ -1,17 +1,15 @@
-//
-// Created by Jonas Zell on 2019-01-17.
-//
-
 #include "mineshaft/Texture/TextureAtlas.h"
-#include "mineshaft/Context.h"
+#include "mineshaft/Application.h"
 
 #include <llvm/ADT/SmallString.h>
 
 using namespace mc;
 
 llvm::Optional<TextureAtlas>
-TextureAtlas::fromFile(llvm::StringRef FileName)
-{
+TextureAtlas::fromFile(BasicTexture::Kind textureKind,
+                       llvm::StringRef FileName,
+                       float textureWidth,
+                       float textureHeight) {
    llvm::SmallString<64> fileName;
    fileName += "../assets/textures/";
    fileName += FileName;
@@ -23,13 +21,45 @@ TextureAtlas::fromFile(llvm::StringRef FileName)
       return llvm::None;
    }
 
-   return TextureAtlas(std::move(str), std::move(Img));
+   GLuint textureID;
+   glGenTextures(1, &textureID);
+   glBindTexture(GL_TEXTURE_2D, textureID);
+
+   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, Img.getSize().x, Img.getSize().y,
+                0, GL_RGBA, GL_UNSIGNED_BYTE, Img.getPixelsPtr());
+
+   glGenerateMipmap(GL_TEXTURE_2D);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+   return TextureAtlas(textureKind, textureID, std::move(str), std::move(Img),
+                       textureWidth, textureHeight);
 }
 
-TextureAtlas::TextureAtlas(std::string &&FileName, sf::Image &&Img)
-   : Img(std::move(Img)), fileName(std::move(FileName))
+TextureAtlas::TextureAtlas()
+   : Img(), fileName(),
+     textureID(0), textureKind(BasicTexture::DIFFUSE)
 {
 
+}
+
+TextureAtlas::TextureAtlas(BasicTexture::Kind textureKind,
+                           GLuint textureID,
+                           std::string &&FileName, sf::Image &&Img,
+                           float textureWidth,
+                           float textureHeight)
+   : Img(std::move(Img)), fileName(std::move(FileName)),
+     textureID(textureID), textureKind(textureKind)
+{
+   auto size = this->Img.getSize();
+
+   float numBlocksHorizontal = size.x / textureWidth;
+   float numBlocksVertical = size.y / textureHeight;
+
+   this->textureWidth = 1.0f / numBlocksHorizontal;
+   this->textureHeight = 1.0f / numBlocksVertical;
 }
 
 sf::Image TextureAtlas::getTextureImg(GLuint BeginX, GLuint BeginY,
@@ -66,7 +96,19 @@ sf::Image TextureAtlas::getTextureImg(GLuint BeginX, GLuint BeginY,
    return SubImg;
 }
 
-BasicTexture *TextureAtlas::getTexture(Context &Ctx,
+glm::vec2 TextureAtlas::getTextureUVCoords(GLuint BeginX, GLuint BeginY)
+{
+   return glm::vec2((BeginX * MC_TEXTURE_WIDTH) / Img.getSize().x,
+                    (BeginY * MC_TEXTURE_HEIGHT) / Img.getSize().y);
+}
+
+void TextureAtlas::bind() const
+{
+   glActiveTexture(GL_TEXTURE0);
+   glBindTexture(GL_TEXTURE_2D, textureID);
+}
+
+BasicTexture *TextureAtlas::getTexture(Application &Ctx,
                                        BasicTexture::Kind kind,
                                        GLuint BeginX, GLuint BeginY,
                                        GLuint EndX, GLuint EndY) const {

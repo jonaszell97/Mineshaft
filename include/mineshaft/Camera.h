@@ -1,7 +1,3 @@
-//
-// Created by Jonas Zell on 2019-01-19.
-//
-
 #ifndef MINEKAMPF_CAMERA_H
 #define MINEKAMPF_CAMERA_H
 
@@ -16,7 +12,11 @@ class GLFWwindow;
 namespace mc {
 
 class Block;
+class Chunk;
+class Event;
+class EventDispatcher;
 class Model;
+class World;
 
 struct ControlMatrices {
    glm::mat4 View;
@@ -27,10 +27,34 @@ struct ControlMatrices {
 
 class Camera {
    /// The context of this camera.
-   Context &Ctx;
+   Application &app;
 
    /// The window this camera operates on.
    GLFWwindow *window;
+
+   /// Current viewport width.
+   int viewportWidth = 0;
+
+   /// Current viewport height.
+   int viewportHeight = 0;
+
+   /// Current window width.
+   int windowWidth = 0;
+
+   /// Current window height.
+   int windowHeight = 0;
+
+   /// The current aspect ratio of the window.
+   float aspectRatio = 0.0f;
+
+   /// Time of the last frame.
+   float currentTime = 0.0f;
+
+   /// Time of the last frame.
+   float lastTime = 0.0f;
+
+   /// Elapsed time since the last frame.
+   float deltaTime = 0.0f;
 
    /// The current position of the camera.
    glm::vec3 position;
@@ -38,29 +62,14 @@ class Camera {
    /// The direction we're looking at.
    glm::vec3 direction;
 
-   /// The current up vector.
-   glm::vec3 up;
-
    /// The current right vector.
    glm::vec3 right;
 
+   /// The current up vector.
+   glm::vec3 up;
+
    /// The current field of view.
    float FOV;
-
-   /// The current horizontal angle.
-   float horizontalAngle;
-
-   /// The current vertical angle.
-   float verticalAngle;
-
-   /// The current movement speed.
-   float speed;
-
-   /// The current mouse speed.
-   float mouseSpeed;
-
-   /// Time of the last camera update.
-   double lastTime;
 
 public:
    struct Plane {
@@ -104,6 +113,12 @@ public:
       }
    };
 
+   enum CameraMode {
+      FirstPerson,
+      ThirdPerson,
+      ThirdPersonInverted,
+   };
+
 private:
    ViewFrustum viewFrustum;
    ControlMatrices viewProjectionMatrices;
@@ -114,23 +129,22 @@ private:
    /// The VBO of the crosshair model.
    unsigned CrosshairVBO = 0;
 
+   /// The current camera mode.
+   CameraMode cameraMode = FirstPerson;
+
 #ifndef NDEBUG
    bool renderFrustumPressed = false;
    ViewFrustum frustumToRender;
 #endif
 
 public:
-   explicit Camera(Context &Ctx,
+   explicit Camera(Application &Ctx,
                    GLFWwindow *window = nullptr,
-                   glm::vec3 position = glm::vec3(),
-                   float FOV = 45.0f,
-                   float horizontalAngle = 3.14f,
-                   float verticalAngle = 0.0f,
-                   float speed = 30.0f,
-                   float mouseSpeed = 0.005f);
+                   glm::vec3 position = glm::vec3(0.0f, 4.0f, 0.0f),
+                   float FOV = 45.0f);
 
-   /// Update this camera's window.
-   void setWindow(GLFWwindow *window);
+   /// Initialize the camera event handlers.
+   void initialize(GLFWwindow *window);
 
    /// \return the position of the camera.
    const glm::vec3 &getPosition() const;
@@ -144,29 +158,44 @@ public:
    /// Update the field of view.
    void setFOV(float FOV);
 
-   /// \return the current horizontal viewing angle.
-   float getHorizontalAngle() const;
+   /// \return The elapsed time since the last frame.
+   float getElapsedTime() const { return deltaTime; }
 
-   /// Update the horizontal viewing angle.
-   void setHorizontalAngle(float horizontalAngle);
+   /// \return The time stamp of the current frame.
+   float getCurrentTime() const { return currentTime; }
 
-   /// \return the current vertical viewing angle.
-   float getVerticalAngle() const;
+   /// \return The time stamp of the last frame.
+   float getLastTime() const { return lastTime; }
 
-   /// Update the vertical viewing angle.
-   void setVerticalAngle(float verticalAngle);
+   /// Update the elapsed time.
+   void updateCurrentTime();
 
-   /// \return the current movement speed.
-   float getSpeed() const;
+   /// Update the elapsed time.
+   void updateLastTime();
 
-   /// Update the movement speed.
-   void setSpeed(float speed);
+   /// \return The current window height in pixels.
+   int getViewportHeight() const { return viewportHeight; }
 
-   /// \return the current mouse speed.
-   float getMouseSpeed() const;
+   /// \return The current window width in pixels.
+   int getViewportWidth() const { return viewportWidth; }
 
-   /// Update the mouse speed.
-   void setMouseSpeed(float mouseSpeed);
+   /// \return The current window height in pixels.
+   int getWindowHeight() const { return windowHeight; }
+
+   /// \return The current window width in pixels.
+   int getWindowWidth() const { return windowWidth; }
+
+   /// \return The current window aspect ratio.
+   float getAspectRatio() const { return aspectRatio; }
+
+   /// \return The current camera mode.
+   CameraMode getCameraMode() const { return cameraMode; }
+
+   /// Set the camera mode.
+   void setCameraMode(CameraMode mode) { cameraMode = mode; }
+
+   /// Cycle through to the next camera mode.
+   void cycleCameraMode();
 
    /// \return A ray vector from the given coordinate.
    glm::vec3 getRayVector(float x, float y);
@@ -215,14 +244,25 @@ public:
    void renderCrosshair();
 
    /// \return true iff the camera currently points at the given object.
-   std::pair<bool, float> pointsAt(const Model &M,
-                                   const glm::mat4 &modelMatrix);
+   std::pair<bool, float> pointsAt(const BoundingBox &boundingBox,
+                                   const glm::mat4 &modelMatrix,
+                                   const glm::vec3 &rayVector);
 
    /// Update viewing angle based on mouse inpit.
    void computeMatricesFromInputs();
 
    /// Render the given array of blocks.
    void renderBlocks(llvm::ArrayRef<const Block*> blocks, bool changed = true);
+   void renderChunks(llvm::ArrayRef<const Chunk*> chunks);
+
+   /// Find the block the player currently points at.
+   const Block *getPointedAtBlock(World &world);
+
+   /// Render the borders around a model.
+   void renderBorders(const Block &block);
+
+   /// Render the debug overlay.
+   void renderDebugOverlay();
 };
 
 } // namespace mc

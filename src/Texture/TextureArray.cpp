@@ -1,7 +1,3 @@
-//
-// Created by Jonas Zell on 2019-01-24.
-//
-
 #include "mineshaft/Texture/TextureArray.h"
 
 using namespace mc;

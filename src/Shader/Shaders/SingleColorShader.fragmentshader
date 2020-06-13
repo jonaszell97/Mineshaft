@@ -9,5 +9,9 @@ uniform vec4 singleColor;
 
 void main()
 {
+//   float threshold = 0.01;
+//   if (singleColor.a < threshold)
+//      discard;
+
    color = singleColor;
 }

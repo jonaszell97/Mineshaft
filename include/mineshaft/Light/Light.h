@@ -1,7 +1,3 @@
-//
-// Created by Jonas Zell on 2019-01-20.
-//
-
 #ifndef OPENGLTEST_LIGHT_H
 #define OPENGLTEST_LIGHT_H
 

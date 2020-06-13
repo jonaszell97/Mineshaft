@@ -1,131 +1,88 @@
-//
-// Created by Jonas Zell on 2019-01-19.
-//
-
 #include "mineshaft/Camera.h"
-#include "mineshaft/Context.h"
+#include "mineshaft/Application.h"
+#include "mineshaft/Entity/Player.h"
 #include "mineshaft/Model/Model.h"
 #include "mineshaft/utils.h"
-#include "mineshaft/World/Block.h"
+#include "mineshaft/World/Chunk.h"
+#include "mineshaft/World/World.h"
+#include "mineshaft/World/WorldGenerator.h"
 
 #include <GLFW/glfw3.h>
 #include <glm/gtc/matrix_transform.hpp>
+#include <llvm/Support/Format.h>
 
 #include <cstdio>
 
 using namespace glm;
 using namespace mc;
 
-#define NEAR_CLIPPING_DISTANCE 0.1f
-#define FAR_CLIPPING_DISTANCE  100.0f
-
-Camera::Camera(Context &Ctx, GLFWwindow *window, glm::vec3 position,
-               float FOV, float horizontalAngle,
-               float verticalAngle, float speed, float mouseSpeed)
-   : Ctx(Ctx), window(window), position(position),
-     FOV(FOV), horizontalAngle(horizontalAngle),
-     verticalAngle(verticalAngle), speed(speed), mouseSpeed(mouseSpeed),
-     lastTime(glfwGetTime())
+Camera::Camera(Application &Ctx, GLFWwindow *window, glm::vec3 position,
+               float FOV)
+   : app(Ctx), window(window),
+     currentTime((float)glfwGetTime()), lastTime(currentTime), deltaTime(0.0f),
+     position(position), FOV(FOV)
 { }
+
+void Camera::initialize(GLFWwindow *window)
+{
+   glfwMakeContextCurrent(window);
+
+   this->window = window;
+   glfwGetFramebufferSize(window, &viewportWidth, &viewportHeight);
+   glViewport(0, 0, viewportWidth, viewportHeight);
+
+   glfwGetWindowSize(window, &windowWidth, &windowHeight);
+   aspectRatio = (float)windowWidth / (float)windowHeight;
+}
+
+void Camera::updateCurrentTime()
+{
+   currentTime = (float)glfwGetTime();
+   deltaTime = currentTime - lastTime;
+}
+
+void Camera::updateLastTime()
+{
+   lastTime = currentTime;
+}
 
 void Camera::computeMatricesFromInputs()
 {
-   // Compute time difference between current and last frame
-   double currentTime = glfwGetTime();
-   float deltaTime = float(currentTime - lastTime);
-
-   // Get mouse position
-   double xpos, ypos;
-   glfwGetCursorPos(window, &xpos, &ypos);
-
-   // Reset mouse position for next frame
-   glfwSetCursorPos(window, 1024/2, 768/2);
-
-   // Compute new orientation
-   horizontalAngle += mouseSpeed * float(1024/2 - xpos);
-   verticalAngle   += mouseSpeed * float( 768/2 - ypos);
-
-   if (verticalAngle >= 3.14f) {
-      verticalAngle = 3.14f;
-   }
-   if (verticalAngle <= -3.14f) {
-      verticalAngle = -3.14f;
-   }
+   auto *player = app.getPlayer();
 
    // Direction : Spherical coordinates to Cartesian coordinates conversion
-   direction = vec3(
-      cos(verticalAngle) * sin(horizontalAngle),
-      sin(verticalAngle),
-      cos(verticalAngle) * cos(horizontalAngle)
-   );
+   direction = player->getDirection();
+   position = player->getPosition();
+   right = player->getRightVector();
+   up = player->getUpVector();
 
-   // Right vector
-   right = glm::vec3(
-      sin(horizontalAngle - 3.14f/2.0f),
-      0,
-      cos(horizontalAngle - 3.14f/2.0f)
-   );
-
-   // Up vector
-   up = glm::cross(right, direction);
-
-   // Move forward
-   if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-      position += direction * deltaTime * speed;
+   switch (cameraMode) {
+   case FirstPerson:
+      position.x += player->getWidth() / 2;
+      position.y += (player->getHeight() / 2) + 1.5f;
+      position.z += player->getDepth() / 2;
+      break;
+   case ThirdPerson:
+      position.y += 7.0f;
+      position.z += 4.2f;
+      break;
+   case ThirdPersonInverted:
+      position.y += 7.0f;
+      position.z -= 4.2f;
+      break;
    }
 
-   // Move backward
-   if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-      position -= direction * deltaTime * speed;
-   }
+   viewProjectionMatrices.Projection = glm::perspective(
+      glm::radians(FOV),
+      (float)viewportWidth / (float)viewportHeight,
+      NEAR_CLIPPING_DISTANCE,
+      FAR_CLIPPING_DISTANCE);
 
-   // Strafe right
-   if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-      position += right * deltaTime * speed;
-   }
-
-   // Strafe left
-   if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-      position -= right * deltaTime * speed;
-   }
-
-   // Move up
-   if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
-      position += up * deltaTime * speed;
-   }
-
-   // Move down
-   if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
-      position -= up * deltaTime * speed;
-   }
-
-   // Increase FoV
-   if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
-      FOV += 5.0f;
-   }
-
-   // Decrease FoV
-   if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
-      FOV -= 5.0f;
-   }
-
-   int width, height;
-   glfwGetWindowSize(window, &width, &height);
-
-   viewProjectionMatrices.Projection = glm::perspective(glm::radians(FOV),
-                                                  (float)width / (float)height,
-                                                  NEAR_CLIPPING_DISTANCE,
-                                                  FAR_CLIPPING_DISTANCE);
-
-   // Camera matrix
    viewProjectionMatrices.View = glm::lookAt(
       position,
       position + direction,
-      up
-   );
+      up);
 
-   // For the next frame, the "last time" will be "now"
-   lastTime = currentTime;
    viewFrustum = calculateViewFrustum();
 
    // Render frustum
@@ -142,6 +99,21 @@ void Camera::computeMatricesFromInputs()
       renderFrustumPressed = false;
    }
 #endif
+}
+
+void Camera::cycleCameraMode()
+{
+   switch (cameraMode) {
+   case FirstPerson:
+      cameraMode = ThirdPerson;
+      break;
+   case ThirdPerson:
+      cameraMode = ThirdPersonInverted;
+      break;
+   case ThirdPersonInverted:
+      cameraMode = FirstPerson;
+      break;
+   }
 }
 
 glm::vec3 Camera::getRayVector(float x, float y)
@@ -178,41 +150,6 @@ glm::vec3 Camera::getRayVector(float x, float y)
    // compute direction of picking ray by subtracting intersection point
    // with camera position
    return pos - position;
-}
-
-std::pair<bool, float> Camera::pointsAt(const Model &M,
-                                        const glm::mat4 &modelMatrix) {
-   int width, height;
-   glfwGetWindowSize(window, &width, &height);
-
-   glm::vec3 rd = getRayVector(width / 2.0f, height / 2.0f);
-   float shortestDistance = -1.0f;
-
-   for (auto &mesh : M.getMeshes()) {
-      unsigned NumVertices = (unsigned)mesh.Indices.size();
-      assert((NumVertices % 3) == 0);
-
-      for (unsigned i = 0; i < NumVertices; i += 3) {
-         glm::vec3 intersection = triIntersect(
-            position, rd,
-            glm::vec3(modelMatrix *
-               glm::vec4(mesh.Vertices[mesh.Indices[i]].Position, 1.0f)),
-            glm::vec3(modelMatrix *
-               glm::vec4(mesh.Vertices[mesh.Indices[i+1]].Position, 1.0f)),
-            glm::vec3(modelMatrix *
-               glm::vec4(mesh.Vertices[mesh.Indices[i+2]].Position, 1.0f)));
-
-         if (intersection.x == -1.0f) {
-            continue;
-         }
-
-         if (shortestDistance == -1.0f || intersection.x < shortestDistance) {
-            shortestDistance = intersection.x;
-         }
-      }
-   }
-
-   return { shortestDistance != -1.0f, shortestDistance };
 }
 
 float Camera::Plane::distance(const glm::vec3 &p) const
@@ -322,7 +259,7 @@ Camera::boxInFrustum(const BoundingBox &box)
       int out = 0;
       int in = 0;
 
-      for (const glm::vec3 &p : box.corners) {
+      for (const glm::vec3 &p : box.corners()) {
          if (in != 0 && out != 0) {
             break;
          }
@@ -432,7 +369,7 @@ void Camera::renderFrustum(const ViewFrustum &viewFrustum)
    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec3),
                 vertices.data(), GL_DYNAMIC_DRAW);
 
-   auto &shader = Ctx.getShader(Context::SINGLE_COLOR_SHADER);
+   auto &shader = app.getShader(Application::SINGLE_COLOR_SHADER);
    shader.useShader();
    shader.setUniform("MVP", viewProjectionMatrices.getMatrix());
 
@@ -499,7 +436,7 @@ void Camera::renderCoordinateSystem()
 
    glBindVertexArray(VAO);
 
-   auto &shader = Ctx.getShader(Context::SINGLE_COLOR_SHADER);
+   auto &shader = app.getShader(Application::SINGLE_COLOR_SHADER);
    shader.useShader();
    shader.setUniform("MVP", viewProjectionMatrices.getMatrix());
 
@@ -556,7 +493,7 @@ void Camera::renderCrosshair()
       glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3*sizeof(float), nullptr);
    }
 
-   auto &shader = Ctx.getShader(Context::CROSSHAIR_SHADER);
+   auto &shader = app.getShader(Application::CROSSHAIR_SHADER);
    shader.useShader();
 
    // Render crosshair
@@ -569,249 +506,144 @@ void Camera::renderCrosshair()
 
 void Camera::renderBoundingBox(const mc::BoundingBox &boundingBox,
                                const glm::vec4 &color) {
-   struct Data {
-      GLuint VAO = 0, VBO = 0;
-   };
-
-   static std::unordered_map<glm::vec3, Data> dataMap;
-   auto &VAO = dataMap[boundingBox.center].VAO;
-   auto &VBO = dataMap[boundingBox.center].VBO;
-
-   if (!VAO) {
-      glGenVertexArrays(1, &VAO);
-      glGenBuffers(1, &VBO);
-
-      glBindVertexArray(VAO);
-      glBindBuffer(GL_ARRAY_BUFFER, VBO);
-
-      std::vector<glm::vec3> vertices{
-         // Top quad
-         boundingBox.corners[0],
-         boundingBox.corners[1],
-
-         boundingBox.corners[0],
-         boundingBox.corners[2],
-
-         boundingBox.corners[1],
-         boundingBox.corners[3],
-
-         boundingBox.corners[2],
-         boundingBox.corners[3],
-
-         // Bottom quad
-         boundingBox.corners[4],
-         boundingBox.corners[5],
-
-         boundingBox.corners[4],
-         boundingBox.corners[6],
-
-         boundingBox.corners[5],
-         boundingBox.corners[7],
-
-         boundingBox.corners[6],
-         boundingBox.corners[7],
-
-         // Sides
-         boundingBox.corners[0],
-         boundingBox.corners[4],
-
-         boundingBox.corners[1],
-         boundingBox.corners[5],
-
-         boundingBox.corners[2],
-         boundingBox.corners[6],
-
-         boundingBox.corners[3],
-         boundingBox.corners[7],
-      };
-
-      glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec3),
-                   vertices.data(), GL_STATIC_DRAW);
-
-      // vertex positions
-      glEnableVertexAttribArray(0);
-      glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), nullptr);
+   static std::unordered_map<BoundingBox, Mesh> map;
+   if (!map.count(boundingBox)) {
+      map.emplace(boundingBox, Mesh::createBoundingBox(app, boundingBox));
    }
 
-   auto &shader = Ctx.getShader(Context::SINGLE_COLOR_SHADER);
-
-   glBindVertexArray(VAO);
-   glEnableVertexAttribArray(0);
-
-   shader.useShader();
+   auto &mesh = map.find(boundingBox)->second;
+   auto &shader = app.getShader(Application::SINGLE_COLOR_SHADER);
    shader.setUniform("singleColor", color);
 
-   glDrawArrays(GL_LINES, 0, 12 * 3 * 2);
-
-   glBindVertexArray(0);
-   glDisableVertexAttribArray(0);
+   mesh.render(shader, viewProjectionMatrices.getMatrix());
 }
 
-void Camera::renderBlocks(llvm::ArrayRef<const Block*> blocks, bool changed)
+void Camera::renderChunks(llvm::ArrayRef<const Chunk*> chunks)
 {
-   if (blocks.empty()) {
+   if (chunks.empty()) {
       return;
    }
 
-   const Shader *shader = &Ctx.getShader(Context::TEXTURE_ARRAY_SHADER_INSTANCED);
+   const Shader &shader = app.getShader(Application::BASIC_SHADER);
+   const Shader &waterShader = app.getShader(Application::WATER_SHADER);
 
-   shader->useShader();
-   shader->setUniform("viewProjectionMatrix", viewProjectionMatrices.getMatrix());
-   shader->setUniform("textureArray", 0);
-   shader->setUniform("cubeArray", 1);
+   waterShader.useShader();
+   waterShader.setUniform("globalTime", currentTime);
 
-   Ctx.blockTextureArray.bind();
-   Ctx.blockTextureCubemapArray.bind();
+   auto vpMatrix = viewProjectionMatrices.getMatrix();
+   app.blockTextures.bind();
 
-   struct RenderData {
-      glm::mat4 modelMatrix;
-      GLint layer;
+   for (auto it = chunks.rbegin(), end_it = chunks.rend(); it != end_it; ++it) {
+      const Chunk *chunk = *it;
 
-      RenderData(const mat4 &modelMatrix, GLint layer, bool cubemap)
-         : modelMatrix(modelMatrix),
-           layer(cubemap ? -layer - 1 : layer)
-      { }
-   };
+      auto &chunkMesh = chunk->getChunkMesh();
+      chunkMesh.finalize();
 
-   static GLuint buffer = 0;
-   if (!buffer) {
-      glGenBuffers(1, &buffer);
+      // Render terrain.
+      shader.useShader();
+      chunkMesh.terrainMesh.render(shader, vpMatrix);
    }
 
-   glBindBuffer(GL_ARRAY_BUFFER, buffer);
+   for (auto it = chunks.rbegin(), end_it = chunks.rend(); it != end_it; ++it) {
+      const Chunk *chunk = *it;
+      auto &chunkMesh = chunk->getChunkMesh();
 
-   if (changed) {
-      std::vector<RenderData> renderData;
-      for (auto *block : blocks) {
-         renderData.emplace_back(block->getModelMatrix(),
-                                 block->getTextureLayer(),
-                                 block->usesCubeMap());
+      // Render translucent block faces.
+      chunkMesh.translucentMesh.render(shader, vpMatrix);
 
-         for (const Mesh &mesh : block->getModel()->getMeshes()) {
-            glBindVertexArray(mesh.VAO);
-
-            static constexpr GLsizei stride = sizeof(RenderData);
-            static constexpr GLsizei vec4Size = sizeof(glm::vec4);
-
-            // model matrix
-            glEnableVertexAttribArray(3);
-            glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, stride, nullptr);
-            glEnableVertexAttribArray(4);
-            glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, stride,
-                                  (void *) (vec4Size));
-            glEnableVertexAttribArray(5);
-            glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, stride,
-                                  (void *) (2 * vec4Size));
-            glEnableVertexAttribArray(6);
-            glVertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, stride,
-                                  (void *) (3 * vec4Size));
-
-            // layer
-            glEnableVertexAttribArray(7);
-            glVertexAttribIPointer(7, 1, GL_INT, stride,
-                                   (void *) (4 * vec4Size));
-
-            glVertexAttribDivisor(3, 1);
-            glVertexAttribDivisor(4, 1);
-            glVertexAttribDivisor(5, 1);
-            glVertexAttribDivisor(6, 1);
-            glVertexAttribDivisor(7, 1);
-
-            glBindVertexArray(0);
-         }
+      // Render water.
+      if (!chunkMesh.waterMesh.Indices.empty()) {
+         waterShader.useShader();
+         chunkMesh.waterMesh.render(waterShader, vpMatrix);
       }
-
-      glBufferData(GL_ARRAY_BUFFER, renderData.size() * sizeof(RenderData),
-                   renderData.data(), GL_DYNAMIC_DRAW);
-   }
-
-   for (const Mesh &mesh : blocks.front()->getModel()->getMeshes()) {
-      glBindVertexArray(mesh.VAO);
-      glDrawElementsInstanced(GL_TRIANGLES, mesh.Indices.size(),
-                              GL_UNSIGNED_INT, nullptr, blocks.size());
    }
 
    // Reset values.
    glBindVertexArray(0);
    glActiveTexture(GL_TEXTURE0);
-
-//   std::unordered_map<Block::BlockID, std::vector<const Block*>> blockMap;
-//   for (auto *block : blocks) {
-//      blockMap[block->getBlockID()].push_back(block);
-//   }
-//
-//   for (auto &blockIDPair : blockMap) {
-//      const Block &first = *blockIDPair.second.front();
-//      if (first.isTransparent()) {
-//         glDisable(GL_DEPTH_TEST);
-//      }
-//
-//      const Shader *shader;
-//      if (first.usesCubeMap()) {
-//         shader = &Ctx.getShader(Context::CUBE_SHADER_INSTANCED);
-//      }
-//      else {
-//         shader = &Ctx.getShader(Context::BASIC_SHADER_INSTANCED);
-//      }
-//
-//      shader->useShader();
-//      shader->setUniform("viewProjectionMatrix", viewProjectionMatrices.getMatrix());
-//
-//      first.getModel()->getMeshes().front().bind(*shader);
-//
-//      std::vector<glm::mat4> modelMatrices;
-//      for (auto *block : blockIDPair.second) {
-//         modelMatrices.push_back(block->getModelMatrix());
-//      }
-//
-//      GLuint buffer;
-//      glGenBuffers(1, &buffer);
-//      glBindBuffer(GL_ARRAY_BUFFER, buffer);
-//      glBufferData(GL_ARRAY_BUFFER, modelMatrices.size() * sizeof(glm::mat4),
-//                   modelMatrices.data(), GL_STATIC_DRAW);
-//
-//      for (auto *block : blockIDPair.second) {
-//         for (const Mesh &mesh : block->getModel()->getMeshes()) {
-//            glBindVertexArray(mesh.VAO);
-//
-//            static constexpr GLsizei vec4Size = sizeof(glm::vec4);
-//            glEnableVertexAttribArray(3);
-//            glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, 4 * vec4Size, nullptr);
-//            glEnableVertexAttribArray(4);
-//            glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, 4 * vec4Size, (void*)(vec4Size));
-//            glEnableVertexAttribArray(5);
-//            glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, 4 * vec4Size, (void*)(2 * vec4Size));
-//            glEnableVertexAttribArray(6);
-//            glVertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, 4 * vec4Size, (void*)(3 * vec4Size));
-//
-//            glVertexAttribDivisor(3, 1);
-//            glVertexAttribDivisor(4, 1);
-//            glVertexAttribDivisor(5, 1);
-//            glVertexAttribDivisor(6, 1);
-//
-//            glBindVertexArray(0);
-//         }
-//      }
-//
-//      for (const Mesh &mesh : first.getModel()->getMeshes()) {
-//         glBindVertexArray(mesh.VAO);
-//         glDrawElementsInstanced(GL_TRIANGLES, mesh.Indices.size(),
-//                                 GL_UNSIGNED_INT, 0, modelMatrices.size());
-//      }
-//
-//      // Reset values.
-//      glBindVertexArray(0);
-//      glActiveTexture(GL_TEXTURE0);
-//
-//      if (first.isTransparent()) {
-//         glEnable(GL_DEPTH_TEST);
-//      }
-//   }
 }
 
-void Camera::setWindow(GLFWwindow *window)
+const Block *Camera::getPointedAtBlock(World &world)
 {
-   this->window = window;
+   unsigned distance = app.gameOptions.interactionDistance;
+   glm::vec3 rd = glm::normalize(direction);
+
+   // Follow the ray from the camera position until we hit a block.
+   float length = 0.5f;
+   WorldPosition lastPos;
+
+   while (length < (float)distance) {
+      WorldPosition pos = getWorldPosition(position + (rd * length));
+      if (pos == lastPos) {
+         length += 0.5f;
+         continue;
+      }
+
+      auto *block = world.getBlock(pos);
+      if (block && block->isSolid()) {
+         return block;
+      }
+
+      length += 0.5f;
+      lastPos = pos;
+   }
+
+   return nullptr;
+}
+
+void Camera::renderBorders(const mc::Block &block)
+{
+   auto *texture = app.loadTexture(BasicTexture::DIFFUSE, "block_border.png");
+   glActiveTexture(GL_TEXTURE0);
+   glBindTexture(GL_TEXTURE_2D, texture->getTextureID());
+
+   auto &shader = app.getShader(Application::BASIC_SHADER);
+   shader.setUniform("textureDiffuse1", 0);
+
+   BoundingBox boundingBox = BoundingBox::unitCube();
+   auto scaledMatrix = glm::scale(
+      glm::translate(glm::mat4(1.0f),
+         getScenePosition(block.getPosition()) + MC_BLOCK_SCALE / 2.f),
+      glm::vec3(1.01f));
+
+   scaledMatrix = glm::translate(scaledMatrix, glm::vec3(-(MC_BLOCK_SCALE/2.f)));
+
+   Mesh m = Mesh::createBoundingBox(app, boundingBox);
+   m.render(shader, viewProjectionMatrices.getMatrix(), scaledMatrix);
+}
+
+llvm::StringRef getBiomeName(Biome b)
+{
+   switch (b) {
+   case Biome::Plains:
+      return "Plains";
+   case Biome::Mountains:
+      return "Mountains";
+   case Biome::Forest:
+      return "Forest";
+   default:
+      return "Unknown";
+   }
+}
+
+void Camera::renderDebugOverlay()
+{
+   auto playerPos = app.getPlayer()->getPosition();
+   auto chunkPos = getChunkPosition(playerPos);
+
+   std::string debugInfo;
+   llvm::raw_string_ostream OS(debugInfo);
+   auto biomeName = getBiomeName(app.activeWorld->getChunk(chunkPos)->getBiome());
+
+   OS << "Mineshaft v0.01a" << "\n";
+   OS << "Player x: " << llvm::format("%0.2f", playerPos.x)
+      << " y: " << llvm::format("%0.2f", playerPos.y)
+      << " z: " << llvm::format("%0.2f", playerPos.z) << "\n";
+   OS << "Chunk x: " << chunkPos.x
+      << " z: " << chunkPos.z << " (" << biomeName << ")\n";
+
+   app.defaultFont.renderText(OS.str(), glm::vec2(2.0f, 2.0f),
+                              3.0f);
 }
 
 const glm::vec3 &Camera::getPosition() const
@@ -832,44 +664,4 @@ float Camera::getFOV() const
 void Camera::setFOV(float FOV)
 {
    Camera::FOV = FOV;
-}
-
-float Camera::getHorizontalAngle() const
-{
-   return horizontalAngle;
-}
-
-void Camera::setHorizontalAngle(float horizontalAngle)
-{
-   Camera::horizontalAngle = horizontalAngle;
-}
-
-float Camera::getVerticalAngle() const
-{
-   return verticalAngle;
-}
-
-void Camera::setVerticalAngle(float verticalAngle)
-{
-   Camera::verticalAngle = verticalAngle;
-}
-
-float Camera::getSpeed() const
-{
-   return speed;
-}
-
-void Camera::setSpeed(float speed)
-{
-   Camera::speed = speed;
-}
-
-float Camera::getMouseSpeed() const
-{
-   return mouseSpeed;
-}
-
-void Camera::setMouseSpeed(float mouseSpeed)
-{
-   Camera::mouseSpeed = mouseSpeed;
 }

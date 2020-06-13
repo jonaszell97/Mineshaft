@@ -1,7 +1,3 @@
-//
-// Created by Jonas Zell on 2019-01-17.
-//
-
 #ifndef MINEKAMPF_MULTITEXTURE_H
 #define MINEKAMPF_MULTITEXTURE_H
 
@@ -10,8 +6,13 @@
 namespace mc {
 
 class TextureAtlas {
-   explicit TextureAtlas(std::string &&FileName,
-                         sf::Image &&Img);
+   TextureAtlas();
+   explicit TextureAtlas(BasicTexture::Kind textureKind,
+                         GLuint textureID,
+                         std::string &&FileName,
+                         sf::Image &&Img,
+                         float textureWidth,
+                         float textureHeight);
 
    // The image containing all textures.
    sf::Image Img;
@@ -19,8 +20,25 @@ class TextureAtlas {
    /// Name of the file this texture was loaded from.
    std::string fileName;
 
+   /// Texture ID of the joined texture.
+   GLuint textureID;
+
+   /// Texture kind of the joined texture.
+   BasicTexture::Kind textureKind;
+
+   /// Width of a single texture, normalized to 1.
+   float textureWidth = 0.0f;
+
+   /// Height of a single texture, normalized to 1.
+   float textureHeight = 0.0f;
+
 public:
-   static llvm::Optional<TextureAtlas> fromFile(llvm::StringRef FileName);
+   static llvm::Optional<TextureAtlas> fromFile(BasicTexture::Kind textureKind,
+                                                llvm::StringRef FileName,
+                                                float textureWidth,
+                                                float textureHeight);
+
+   friend class Application;
 
    TextureAtlas(const TextureAtlas&) = delete;
    TextureAtlas &operator=(const TextureAtlas&) = delete;
@@ -28,13 +46,23 @@ public:
    TextureAtlas(TextureAtlas&&) = default;
    TextureAtlas &operator=(TextureAtlas&&) = default;
 
-   BasicTexture *getTexture(Context &Ctx,
+   BasicTexture *getTexture(Application &Ctx,
                             BasicTexture::Kind kind,
                             GLuint BeginX, GLuint BeginY,
                             GLuint EndX = -1, GLuint EndY = -1) const;
 
    sf::Image getTextureImg(GLuint BeginX, GLuint BeginY,
                            GLuint EndX = -1, GLuint EndY = -1) const;
+
+   glm::vec2 getTextureUVCoords(GLuint BeginX, GLuint BeginY);
+
+   void bind() const;
+
+   GLuint getTextureID() const { return textureID; }
+   BasicTexture::Kind getKind() const { return textureKind; }
+   const sf::Image &getImage() const { return Img; }
+   float getTextureWidth() const { return textureWidth; }
+   float getTextureHeight() const { return textureHeight; }
 };
 
 } // namespace mc

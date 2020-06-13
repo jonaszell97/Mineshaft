@@ -6,8 +6,13 @@ MC_BLOCK(Air)
 MC_BLOCK(Dirt)
 MC_BLOCK(Grass)
 MC_BLOCK(Stone)
+MC_BLOCK(CobbleStone)
 MC_BLOCK(Bedrock)
 MC_BLOCK(MoonStone)
+MC_BLOCK(Sand)
+MC_BLOCK(OakWood)
+MC_BLOCK(Leaf)
+MC_BLOCK(Water)
 
 
 #undef MC_BLOCK

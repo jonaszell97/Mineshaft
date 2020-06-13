@@ -1,10 +1,9 @@
-//
-// Created by Jonas Zell on 2019-01-23.
-//
-
-#include "mineshaft/Context.h"
+#include "mineshaft/Application.h"
+#include "mineshaft/Entity/Entity.h"
+#include "mineshaft/Entity/Player.h"
 #include "mineshaft/utils.h"
 #include "mineshaft/World/World.h"
+#include "mineshaft/World/WorldGenerator.h"
 
 using namespace mc;
 
@@ -16,38 +15,60 @@ WorldSegment::WorldSegment(World *world, int x, int z)
    for (int i = x; i < x + MC_WORLD_SEGMENT_WIDTH; ++i) {
       for (int j = z; j < z + MC_WORLD_SEGMENT_DEPTH; ++j) {
          chunks[i - x][j - z].initialize(world, i, j);
-         llvm::errs() << "initializing chunk (" << i << ", " << j << ")\n";
       }
    }
 }
 
-World::World(mc::Context &Ctx, const WorldGenOptions &options)
-   : Ctx(Ctx), numChunksToRender(
-   Ctx.gameOptions.renderDistance * Ctx.gameOptions.renderDistance * 4),
-     options(options)
+World::World(Application &app)
+   : app(app), numChunksToRender(
+   (2*app.gameOptions.renderDistance+1)*(2*app.gameOptions.renderDistance+1))
 {
-   chunksToRender = new Chunk*[numChunksToRender];
-   chunkUpdateDistanceThreshold = Ctx.gameOptions.renderDistance * 15.0f;
+   chunksToRender = app.Allocate<Chunk*>(numChunksToRender);
+   chunkUpdateDistanceThreshold = app.gameOptions.renderDistance * 15.0f;
+}
+
+World::World(World &&w) noexcept
+   : app(w.app), loadedSegments(w.loadedSegments),
+     chunksToRender(w.chunksToRender), numChunksToRender(w.numChunksToRender),
+     chunkUpdateDistanceThreshold(w.chunkUpdateDistanceThreshold),
+     centerChunk(w.centerChunk), focusedBlock(w.focusedBlock),
+     entities(std::move(w.entities)), activeEntities(std::move(w.activeEntities)),
+     minX(w.minX), maxX(w.maxX), minZ(w.minZ), maxZ(w.maxZ)
+{
+   w.loadedSegments = nullptr;
+   w.chunksToRender = nullptr;
+   w.minX = 0;
+   w.maxX = 0;
+   w.minZ = 0;
+   w.maxZ = 0;
 }
 
 World::~World()
 {
    int xSize = maxX - minX;
-   int zSize = maxZ - minZ;
-
    for (int i = 0; i < xSize; ++i) {
-      for (int j = 0; j < zSize; ++j) {
-         if (!loadedSegments[i][j]) {
-            continue;
-         }
-
-         loadedSegments[i][j]->~WorldSegment();
-      }
-
       free(loadedSegments[i]);
    }
 
-   delete[] chunksToRender;
+   free(loadedSegments);
+}
+
+World& World::operator=(mc::World &&w) noexcept
+{
+   std::swap(w.loadedSegments, loadedSegments);
+   std::swap(w.chunksToRender, chunksToRender);
+   std::swap(w.numChunksToRender, numChunksToRender);
+   std::swap(w.chunkUpdateDistanceThreshold, chunkUpdateDistanceThreshold);
+   std::swap(w.centerChunk, centerChunk);
+   std::swap(w.focusedBlock, focusedBlock);
+   std::swap(w.entities, entities);
+   std::swap(w.activeEntities, activeEntities);
+   std::swap(w.minX, minX);
+   std::swap(w.maxX, maxX);
+   std::swap(w.minZ, minZ);
+   std::swap(w.maxZ, maxZ);
+
+   return *this;
 }
 
 World::ChunkIndex World::getLocalChunkCoordinate(const ChunkPosition &chunkPos)
@@ -129,18 +150,16 @@ WorldSegment* World::getSegment(int x, int z, bool initialize)
    growWorld(neededMinX, neededMaxX + 1, neededMinZ, neededMaxZ + 1);
 
    auto coords = getLocalSegmentCoordinate(x, z);
-   WorldSegment *&seg = loadedSegments[coords.first][coords.second];
 
+   WorldSegment *&seg = loadedSegments[coords.first][coords.second];
    if (seg || !initialize) {
       return seg;
    }
 
    {
-      Timer t("init_chunk");
-      seg = new(Ctx) WorldSegment(this, x, z);
+      seg = new(app) WorldSegment(this, x, z);
    }
    {
-      Timer t("gen_world_segment");
       genWorld(*seg);
    }
 
@@ -160,16 +179,33 @@ Chunk* World::getChunk(const ChunkPosition &chunkPos, bool initialize)
    return &segment->chunks[coords.localChunkX][coords.localChunkZ];
 }
 
-const Block *World::getBlock(const WorldPosition &pos)
+const Block *World::getBlock(const WorldPosition &pos) const
 {
    auto chunkPos = getChunkPosition(pos);
-   auto *chunk = getChunk(chunkPos, false);
+   const Chunk *chunk = const_cast<World*>(this)->getChunk(chunkPos, false);
 
    if (!chunk) {
       return nullptr;
    }
 
-   return &chunk->getBlockAt(pos);
+   return chunk->getBlockAt(pos);
+}
+
+void World::updateBlock(const mc::WorldPosition &pos,
+                        mc::Block &&block,
+                        bool delayIfNecessary) {
+   auto chunkPos = getChunkPosition(pos);
+   auto *chunk = const_cast<World*>(this)->getChunk(chunkPos, false);
+
+   if (!chunk) {
+      if (delayIfNecessary) {
+         blockUpdates[chunkPos].emplace_back(pos, std::move(block));
+      }
+
+      return;
+   }
+
+   chunk->updateBlock(pos, std::move(block));
 }
 
 const Block* World::getBlockNeighbour(const Block &block,
@@ -295,8 +331,10 @@ void World::growWorld(int neededMinX, int neededMaxX,
    maxZ = totalMaxZ;
 }
 
-void World::updatePlayerPosition(const glm::vec3 &pos)
+void World::updatePlayerPosition()
 {
+   glm::vec3 pos = app.getPlayer()->getPosition();
+
    // Get the position of the player in world coordinates.
    auto playerPosW = getWorldPosition(pos);
 
@@ -327,23 +365,48 @@ void World::loadChunk(Chunk *chunk)
    int chunkX = chunkPos.x;
    int chunkZ = chunkPos.z;
 
-   unsigned renderDistance = Ctx.gameOptions.renderDistance;
+   unsigned renderDistance = app.gameOptions.renderDistance;
    unsigned k = 0;
 
-   int i = chunkX - renderDistance;
-   int maxi = chunkX + renderDistance;
+//   int i = chunkX - renderDistance;
+//   int maxi = chunkX + renderDistance;
+//
+//   for (; i < maxi; ++i) {
+//      int j = chunkZ - renderDistance;
+//      int maxz = chunkZ + renderDistance;
+//
+//      for (; j < maxz; ++j) {
+//         chunksToRender[k++] = getChunk(ChunkPosition(i, j));
+//      }
+//   }
 
-   for (; i < maxi; ++i) {
-      int j = chunkZ - renderDistance;
-      int maxz = chunkZ + renderDistance;
+   chunksToRender[k++] = chunk;
+   centerChunk = chunk;
 
-      for (; j < maxz; ++j) {
-         chunksToRender[k++] = getChunk(ChunkPosition(i, j));
+   for (int i = 1; i <= renderDistance; ++i) {
+      for (int x = -i; x <= i; x += 2*i) {
+         for (int z = -i; z <= i; ++z) {
+            chunksToRender[k++] = getChunk(ChunkPosition(chunkX + x, chunkZ + z));
+         }
+      }
+      for (int z = -i; z <= i; z += 2*i) {
+         for (int x = -i+1; x < i; ++x) {
+            chunksToRender[k++] = getChunk(ChunkPosition(chunkX + x, chunkZ + z));
+         }
       }
    }
 
-   centerChunk = chunk;
-   updateVisibility();
+   assert(k == numChunksToRender);
+
+   // Update active entities.
+   activeEntities.clear();
+
+   for (auto *e : entities) {
+      auto chunkPos = getChunkPosition(e->getPosition());
+      if (isChunkVisible(chunkPos)) {
+         activeEntities.insert(e);
+      }
+   }
 }
 
 llvm::ArrayRef<Chunk*> World::getChunksToRender() const
@@ -351,37 +414,46 @@ llvm::ArrayRef<Chunk*> World::getChunksToRender() const
    return llvm::ArrayRef<Chunk*>(chunksToRender, numChunksToRender);
 }
 
-void World::genWorld(mc::WorldSegment &seg)
+void World::registerEntity(Entity *e)
 {
-   switch (options.type) {
-   case WorldGenOptions::FLAT:
-      genFlat(seg);
-      break;
+   entities.push_back(e);
+
+   auto chunkPos = getChunkPosition(e->getPosition());
+   if (isChunkVisible(chunkPos)) {
+      activeEntities.insert(e);
    }
 }
 
-void World::genFlat(mc::WorldSegment &seg)
+bool World::isChunkVisible(const ChunkPosition &pos) const
+{
+   if (!centerChunk) {
+      return false;
+   }
+
+   unsigned renderDistance = app.gameOptions.renderDistance;
+   auto centerPos = centerChunk->getChunkPosition();
+
+   return pos.x >= centerPos.x - renderDistance
+      && pos.x < centerPos.x + renderDistance
+      && pos.z >= centerPos.z - renderDistance
+      && pos.z < centerPos.z + renderDistance;
+}
+
+void World::genWorld(WorldSegment &seg)
 {
    for (auto &chunk : seg.getChunks()) {
-      genFlatChunk(chunk);
-   }
-}
+      // Perform delayed block updates.
+      auto it = blockUpdates.find(chunk.getChunkPosition());
+      if (it != blockUpdates.end()) {
+         for (DelayedBlockUpdate &update : it->second) {
+            updateBlock(update.pos, std::move(update.block));
+         }
 
-void World::genFlatChunk(mc::Chunk &chunk)
-{
-   static Block grass = Block::createGrass(Ctx, glm::vec3(0.0f));
-   static Block dirt = Block::createGrass(Ctx, glm::vec3(0.0f));
-   static Block stone = Block::createGrass(Ctx, glm::vec3(0.0f));
-
-   chunk.fillLayerWith(Ctx, options.seaY, grass);
-
-   for (int layer = options.seaY - 1; layer > -(MC_CHUNK_HEIGHT / 2); --layer) {
-      if (layer > options.dirtY) {
-         chunk.fillLayerWith(Ctx, layer, dirt);
+         it->second.clear();
       }
-      else {
-         chunk.fillLayerWith(Ctx, layer, stone);
-      }
+
+      worldGenerator->generateTerrain(chunk);
+      chunk.setModified();
    }
 }
 

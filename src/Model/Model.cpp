@@ -1,10 +1,7 @@
-//
-// Created by Jonas Zell on 2019-01-17.
-//
-
+#include "mineshaft/Application.h"
 #include "mineshaft/Model/Model.h"
-#include "mineshaft/Context.h"
 #include "mineshaft/utils.h"
+#include "mineshaft/World/Block.h"
 
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
@@ -20,6 +17,158 @@
 
 using namespace mc;
 
+BoundingBox BoundingBox::unitCube()
+{
+   static BoundingBox boundingBox;
+   static bool initialized = false;
+   if (!initialized) {
+      boundingBox.minX = 0;
+      boundingBox.maxX = MC_BLOCK_SCALE;
+
+      boundingBox.minY = 0;
+      boundingBox.maxY = MC_BLOCK_SCALE;
+
+      boundingBox.minZ = 0;
+      boundingBox.maxZ = MC_BLOCK_SCALE;
+   }
+
+   return boundingBox;
+}
+
+void BoundingBox::applyOffset(const glm::vec3 &vec)
+{
+   minX += vec.x;
+   maxX += vec.x;
+
+   minY += vec.y;
+   maxY += vec.y;
+
+   minZ += vec.z;
+   maxZ += vec.z;
+}
+
+BoundingBox BoundingBox::offsetBy(const glm::vec3 &vec) const
+{
+   BoundingBox copy = *this;
+   copy.applyOffset(vec);
+
+   return copy;
+}
+
+glm::vec3 BoundingBox::center() const
+{
+   return glm::vec3(minX + ((maxX - minX) / 2.0f),
+                    minY + ((maxY - minY) / 2.0f),
+                    minZ + ((maxZ - minZ) / 2.0f));
+}
+
+glm::vec3 BoundingBox::fbl() const
+{
+   return glm::vec3(minX, minY, maxZ);
+}
+
+glm::vec3 BoundingBox::bbl() const
+{
+   return glm::vec3(minX, minY, minZ);
+}
+
+glm::vec3 BoundingBox::fbr() const
+{
+   return glm::vec3(maxX, minY, maxZ);
+}
+
+glm::vec3 BoundingBox::bbr() const
+{
+   return glm::vec3(maxX, minY, minZ);
+}
+
+glm::vec3 BoundingBox::ftl() const
+{
+   return glm::vec3(minX, maxY, maxZ);
+}
+
+glm::vec3 BoundingBox::btl() const
+{
+   return glm::vec3(minX, maxY, minZ);
+}
+
+glm::vec3 BoundingBox::ftr() const
+{
+   return glm::vec3(maxX, maxY, maxZ);
+}
+
+glm::vec3 BoundingBox::btr() const
+{
+   return glm::vec3(maxX, maxY, minZ);
+}
+
+bool BoundingBox::contains(const glm::vec3 &point) const
+{
+   return (point.x >= minX && point.x <= maxX) &&
+          (point.y >= minY && point.y <= maxY) &&
+          (point.z >= minZ && point.z <= maxZ);
+}
+
+std::pair<bool, glm::vec3> BoundingBox::intersects(const glm::vec3 &rayOrigin,
+                                                   const glm::vec3 &rayDir,
+                                                   float minDist, float maxDist) const {
+   glm::vec3 invDir = 1.f / rayDir;
+
+   bool signDirX = invDir.x < 0;
+   bool signDirY = invDir.y < 0;
+   bool signDirZ = invDir.z < 0;
+
+   glm::vec3 min = glm::vec3(minX, minY, minZ);
+   glm::vec3 max = glm::vec3(maxX, maxY, maxZ);
+   glm::vec3 bbox = signDirX ? min : max;
+
+   float tmin = (bbox.x - rayOrigin.x) * invDir.x;
+   bbox = signDirX ? min : max;
+   float tmax = (bbox.x - rayOrigin.x) * invDir.x;
+   bbox = signDirY ? max : min;
+   float tymin = (bbox.y - rayOrigin.y) * invDir.y;
+   bbox = signDirY ? min : max;
+   float tymax = (bbox.y - rayOrigin.y) * invDir.y;
+
+   if ((tmin > tymax) || (tymin > tmax)) {
+      return {false, {}};
+   }
+   if (tymin > tmin) {
+      tmin = tymin;
+   }
+   if (tymax < tmax) {
+      tmax = tymax;
+   }
+
+   bbox = signDirZ ? max : min;
+   float tzmin = (bbox.z - rayOrigin.z) * invDir.z;
+   bbox = signDirZ ? min : max;
+   float tzmax = (bbox.z - rayOrigin.z) * invDir.z;
+
+   if ((tmin > tzmax) || (tzmin > tmax)) {
+      return {false, {}};
+   }
+   if (tzmin > tmin) {
+      tmin = tzmin;
+   }
+   if (tzmax < tmax) {
+      tmax = tzmax;
+   }
+
+   if ((tmin < maxDist) && (tmax > minDist)) {
+      return {true, (rayOrigin + (rayDir * tmin) )};
+   }
+
+   return {false, {}};
+}
+
+bool BoundingBox::collidesWith(const mc::BoundingBox &other) const
+{
+   return (minX <= other.maxX && maxX >= other.minX) &&
+          (minY <= other.maxY && maxY >= other.minY) &&
+          (minZ <= other.maxZ && maxZ >= other.minZ);
+}
+
 Mesh::Mesh(std::vector<Vertex> &&Vertices,
            std::vector<unsigned> &&Indices,
            std::vector<Texture> &&Textures)
@@ -29,20 +178,34 @@ Mesh::Mesh(std::vector<Vertex> &&Vertices,
    initializeMesh();
 }
 
-Mesh& Mesh::operator=(Mesh &&Other) noexcept
+Mesh::Mesh(mc::Mesh &&other) noexcept
+   : Vertices(move(other.Vertices)),
+     Indices(move(other.Indices)),
+     Textures(move(other.Textures)),
+     VAO(other.VAO), VBO(other.VBO), EBO(other.EBO)
 {
-   Vertices = std::move(Other.Vertices);
-   Indices = std::move(Other.Indices);
-   Textures = std::move(Other.Textures);
-   VAO = Other.VAO;
-   EBO = Other.EBO;
-   VBO = Other.VBO;
+   other.VAO = 0;
+   other.VBO = 0;
+   other.EBO = 0;
+}
 
-   Other.VAO = 0;
-   Other.VBO = 0;
-   Other.EBO = 0;
+Mesh& Mesh::operator=(Mesh &&other) noexcept
+{
+   std::swap(Vertices, other.Vertices);
+   std::swap(Indices, other.Indices);
+   std::swap(Textures, other.Textures);
+   std::swap(VAO, other.VAO);
+   std::swap(VBO, other.VBO);
+   std::swap(EBO, other.EBO);
 
    return *this;
+}
+
+Mesh::~Mesh()
+{
+   glDeleteVertexArrays(1, &VAO);
+   glDeleteBuffers(1, &EBO);
+   glDeleteBuffers(1, &VBO);
 }
 
 Mesh Mesh::createTriangle(glm::vec3 p1, glm::vec3 p2, glm::vec3 p3)
@@ -55,207 +218,162 @@ Mesh Mesh::createTriangle(glm::vec3 p1, glm::vec3 p2, glm::vec3 p3)
    return Mesh(move(Vertices), { 0, 1, 2 }, {});
 }
 
-Mesh Mesh::createCube(Context &Ctx, llvm::StringRef texture)
+Mesh Mesh::createQuad(glm::vec3 bl, glm::vec3 tl, glm::vec3 tr, glm::vec3 br,
+                      glm::vec2 uv, float textureWidth, float textureHeight,
+                      unsigned windingOrder) {
+   if (windingOrder == GL_CCW) {
+      std::vector<Vertex> Vertices;
+      Vertices.emplace_back(bl, glm::vec2(uv.x, uv.y + textureHeight), glm::vec3());
+      Vertices.emplace_back(tl, uv, glm::vec3());
+      Vertices.emplace_back(tr, glm::vec2(uv.x + textureWidth, uv.y), glm::vec3());
+      Vertices.emplace_back(br, glm::vec2(uv.x + textureWidth, uv.y + textureHeight), glm::vec3());
+
+      return Mesh(move(Vertices), { 0, 3, 2, 0, 2, 1 }, { });
+   }
+
+   std::vector<Vertex> Vertices;
+   Vertices.emplace_back(bl, uv, glm::vec3());
+   Vertices.emplace_back(tl, glm::vec2(uv.x, uv.y + textureHeight), glm::vec3());
+   Vertices.emplace_back(tr, glm::vec2(uv.x + textureWidth, uv.y + textureHeight), glm::vec3());
+   Vertices.emplace_back(br, glm::vec2(uv.x + textureWidth, uv.y), glm::vec3());
+
+   assert(windingOrder == GL_CW && "unknown winding order!");
+   return Mesh(move(Vertices), { 0, 2, 3, 0, 1, 2 }, { });
+}
+
+Mesh Mesh::createCube(Application &Ctx, llvm::StringRef texture)
 {
    return createCube(Ctx.loadTexture(BasicTexture::DIFFUSE, texture));
 }
 
+static void addCubeFace(Block::FaceMask face, std::vector<unsigned> &Indices,
+                        std::vector<Vertex> &Vertices,
+                        const BoundingBox &boundingBox,
+                        glm::vec2 uv = glm::vec2(0.0f, 0.0f),
+                        float textureWidth = 1.0f,
+                        float textureHeight = 1.0f) {
+   glm::vec3 points[4];
+   glm::vec3 normal;
+
+   // bottom left, top left, top right, bottom right
+   switch (face) {
+   case Block::F_Right:
+      // right face
+      points[0] = boundingBox.fbr();
+      points[1] = boundingBox.ftr();
+      points[2] = boundingBox.btr();
+      points[3] = boundingBox.bbr();
+
+      normal = glm::vec3(1.0f, 0.0f, 0.0f);
+
+      break;
+   case Block::F_Left:
+      // left face
+      points[0] = boundingBox.bbl();
+      points[1] = boundingBox.btl();
+      points[2] = boundingBox.ftl();
+      points[3] = boundingBox.fbl();
+
+      normal = glm::vec3(-1.0f, 0.0f, 0.0f);
+
+      break;
+   case Block::F_Top:
+      // top face
+      points[0] = boundingBox.ftl();
+      points[1] = boundingBox.btl();
+      points[2] = boundingBox.btr();
+      points[3] = boundingBox.ftr();
+
+      normal = glm::vec3(0.0f, 1.0f, 0.0f);
+
+      break;
+   case Block::F_Bottom:
+      // bottom face
+      points[0] = boundingBox.bbl();
+      points[1] = boundingBox.fbl();
+      points[2] = boundingBox.fbr();
+      points[3] = boundingBox.bbr();
+
+      normal = glm::vec3(0.0f, -1.0f, 0.0f);
+
+      break;
+   case Block::F_Front:
+      // front face
+      points[0] = boundingBox.fbl();
+      points[1] = boundingBox.ftl();
+      points[2] = boundingBox.ftr();
+      points[3] = boundingBox.fbr();
+
+      normal = glm::vec3(0.0f, 0.0f, 1.0f);
+
+      break;
+   case Block::F_Back:
+      // back face
+      points[0] = boundingBox.bbr();
+      points[1] = boundingBox.btr();
+      points[2] = boundingBox.btl();
+      points[3] = boundingBox.bbl();
+
+      normal = glm::vec3(0.0f, 0.0f, -1.0f);
+
+      break;
+   default:
+      llvm_unreachable("bad face index");
+   }
+
+   // bottom left
+   size_t idx0 = Vertices.size();
+   Vertices.emplace_back(points[0], glm::vec2(uv.x, uv.y + textureHeight), normal);
+
+   // top left
+   size_t idx1 = Vertices.size();
+   Vertices.emplace_back(points[1], glm::vec2(uv.x, uv.y), normal);
+
+   // top right
+   size_t idx2 = Vertices.size();
+   Vertices.emplace_back(points[2], glm::vec2(uv.x + textureWidth, uv.y), normal);
+
+   // bottom right
+   size_t idx3 = Vertices.size();
+   Vertices.emplace_back(points[3], glm::vec2(uv.x + textureWidth, uv.y + textureHeight), normal);
+
+   // first triangle (top left - bottom left - bottom right)
+   Indices.emplace_back(idx1);
+   Indices.emplace_back(idx0);
+   Indices.emplace_back(idx3);
+
+   // second triangle (top left - bottom right - top right)
+   Indices.emplace_back(idx1);
+   Indices.emplace_back(idx3);
+   Indices.emplace_back(idx2);
+}
+
+Mesh Mesh::createBoundingBox(mc::Application &Ctx,
+                             const mc::BoundingBox &boundingBox) {
+   std::vector<unsigned> Indices;
+   std::vector<Vertex> Vertices;
+
+   for (unsigned i = 0; i < 6; ++i) {
+      addCubeFace(Block::face(i), Indices, Vertices, boundingBox);
+   }
+
+   return Mesh(move(Vertices), move(Indices), {});
+}
+
 Mesh Mesh::createCube(BasicTexture *texture)
 {
-   static unsigned cube_indices[] = {
-      // 0 - front bottom right
-      // 1 - back bottom left
-      // 2 - back bottom right
-      // > bottom back
-      0, 1, 2,
-
-      // 3 - back top left
-      // 4 - front top right
-      // 5 - back top right
-      // > top back
-      3, 4, 5,
-
-      // 6 - back top right
-      // 7 - front bottom right
-      // 8 - back bottom right
-      6, 7, 8,
-
-      // 9 - front top right
-      // 10 - front bottom left
-      // 11 - front bottom right
-      9, 10, 11,
-
-      // 12 - front bottom left
-      // 13 - back top left
-      // 14 - back bottom left
-      12, 13, 14,
-
-      // 15 - back bottom right
-      // 16 - back top left
-      // 17 - back top right
-      15, 16, 17,
-
-      // 0 - front bottom right
-      // 18 - front bottom left
-      // 1 - back bottom left
-      0, 18, 1,
-
-      // 3 - back top left
-      // 19 - front top left
-      // 4 - front top right
-      3, 19, 4,
-
-      // 6 - back top right
-      // 20 - front top right
-      // 7 - front bottom right
-      6, 20, 7,
-
-      // 9 - front top right
-      // 21 - front top left
-      // 10 - front bottom left
-      9, 21, 10,
-
-      // 12 - front bottom left
-      // 22 - front top left
-      // 13 - back top left
-      12, 22, 13,
-
-      // 15 - back bottom right
-      // 23 - back bottom left
-      // 16 - back top left
-      15, 23, 16,
-   };
-
    static Mesh Cube;
    if (Cube.Indices.empty()) {
       std::vector<unsigned> Indices;
-      Indices.resize(sizeof(cube_indices) / sizeof(unsigned));
-      std::copy(cube_indices,
-                cube_indices + (sizeof(cube_indices) / sizeof(unsigned)),
-                Indices.data());
+      Indices.reserve(36);
 
       std::vector<Vertex> Vertices;
       Vertices.reserve(24);
 
-      // 0 - front bottom right
-      Vertices.emplace_back(glm::vec3(1.0f, -1.0f, 1.0f),
-                            glm::vec2(1.0f, 0.0f),
-                            glm::vec3(0.0f, -1.0f, 0.0f));
-
-      // 1 - back bottom left
-      Vertices.emplace_back(glm::vec3(-1.0f, -1.0f, -1.0f),
-                            glm::vec2(0.0f, 1.0f),
-                            glm::vec3(0.0f, -1.0f, 0.0f));
-
-      // 2 - back bottom right
-      Vertices.emplace_back(glm::vec3(1.0f, -1.0f, -1.0f),
-                            glm::vec2(0.0f, 0.0f),
-                            glm::vec3(0.0f, -1.0f, 0.0f));
-
-      // 3 - back top left
-      Vertices.emplace_back(glm::vec3(-1.0f, 1.0f, -1.0f),
-                            glm::vec2(1.0f, 0.0f),
-                            glm::vec3(0.0f, 1.0f, 0.0f));
-
-      // 4 - front top right
-      Vertices.emplace_back(glm::vec3(1.0f, 1.0f, 1.0f),
-                            glm::vec2(0.0f, 1.0f),
-                            glm::vec3(0.0f, 1.0f, 0.0f));
-
-      // 5 - back top right
-      Vertices.emplace_back(glm::vec3(1.0f, 1.0f, -1.0f),
-                            glm::vec2(0.0f, 0.0f),
-                            glm::vec3(0.0f, 1.0f, 0.0f));
-
-      // 6 - back top right
-      Vertices.emplace_back(glm::vec3(1.0f, 1.0f, -1.0f),
-                            glm::vec2(1.0f, 0.0f),
-                            glm::vec3(1.0f, -0.0f, 0.0f));
-
-      // 7 - front bottom right
-      Vertices.emplace_back(glm::vec3(1.0f, -1.0f, 1.0f),
-                            glm::vec2(0.0f, 1.0f),
-                            glm::vec3(1.0f, -0.0f, 0.0f));
-
-      // 8 - back bottom right
-      Vertices.emplace_back(glm::vec3(1.0f, -1.0f, -1.0f),
-                            glm::vec2(0.0f, 0.0f),
-                            glm::vec3(1.0f, -0.0f, 0.0f));
-
-      // 9 - front top right
-      Vertices.emplace_back(glm::vec3(1.0f, 1.0f, 1.0f),
-                            glm::vec2(1.0f, 0.0f),
-                            glm::vec3(0.0f, -0.0f, 1.0f));
-
-      // 10 - front bottom left
-      Vertices.emplace_back(glm::vec3(-1.0f, -1.0f, 1.0f),
-                            glm::vec2(0.0f, 1.0f),
-                            glm::vec3(0.0f, -0.0f, 1.0f));
-
-      // 11 - front bottom right
-      Vertices.emplace_back(glm::vec3(1.0f, -1.0f, 1.0f),
-                            glm::vec2(0.0f, 0.0f),
-                            glm::vec3(0.0f, -0.0f, 1.0f));
-
-      // 12 - front bottom left
-      Vertices.emplace_back(glm::vec3(-1.0f, -1.0f, 1.0f),
-                            glm::vec2(0.0f, 0.0f),
-                            glm::vec3(-1.0f, -0.0f, -0.0f));
-
-      // 13 - back top left
-      Vertices.emplace_back(glm::vec3(-1.0f, 1.0f, -1.0f),
-                            glm::vec2(1.0f, 1.0f),
-                            glm::vec3(-1.0f, -0.0f, -0.0f));
-
-      // 14 - back bottom left
-      Vertices.emplace_back(glm::vec3(-1.0f, -1.0f, -1.0f),
-                            glm::vec2(0.0f, 1.0f),
-                            glm::vec3(-1.0f, -0.0f, -0.0f));
-
-      // 15 - back bottom right
-      Vertices.emplace_back(glm::vec3(1.0f, -1.0f, -1.0f),
-                            glm::vec2(1.0f, 0.0f),
-                            glm::vec3(0.0f, 0.0f, -1.0f));
-
-      // 16 - back top left
-      Vertices.emplace_back(glm::vec3(-1.0f, 1.0f, -1.0f),
-                            glm::vec2(0.0f, 1.0f),
-                            glm::vec3(0.0f, 0.0f, -1.0f));
-
-      // 17 - back top right
-      Vertices.emplace_back(glm::vec3(1.0f, 1.0f, -1.0f),
-                            glm::vec2(0.0f, 0.0f),
-                            glm::vec3(0.0f, 0.0f, -1.0f));
-
-      // 18 - front bottom left
-      Vertices.emplace_back(glm::vec3(-1.0f, -1.0f, 1.0f),
-                            glm::vec2(1.0f, 1.0f),
-                            glm::vec3(0.0f, -1.0f, 0.0f));
-
-      // 19 - front top left
-      Vertices.emplace_back(glm::vec3(-1.0f, 1.0f, 1.0f),
-                            glm::vec2(1.0f, 1.0f),
-                            glm::vec3(0.0f, 1.0f, 0.0f));
-
-      // 20 - front top right
-      Vertices.emplace_back(glm::vec3(1.0f, 1.0f, 1.0f),
-                            glm::vec2(1.0f, 1.0f),
-                            glm::vec3(1.0f, -0.0f, 0.0f));
-
-      // 21 - front top left
-      Vertices.emplace_back(glm::vec3(-1.0f, 1.0f, 1.0f),
-                            glm::vec2(1.0f, 1.0f),
-                            glm::vec3(0.0f, -0.0f, 1.0f));
-
-      // 22 - front top left
-      Vertices.emplace_back(glm::vec3(-1.0f, 1.0f, 1.0f),
-                            glm::vec2(1.0f, 0.0f),
-                            glm::vec3(-1.0f, -0.0f, -0.0f));
-
-      // 23 - back bottom left
-      Vertices.emplace_back(glm::vec3(-1.0f, -1.0f, -1.0f),
-                            glm::vec2(1.0f, 1.0f),
-                            glm::vec3(0.0f, 0.0f, -1.0f));
+      BoundingBox boundingBox = BoundingBox::unitCube();
+      for (unsigned i = 0; i < 6; ++i) {
+         addCubeFace(Block::face(i), Indices, Vertices, boundingBox);
+      }
 
       Cube = Mesh(move(Vertices), move(Indices), {});
    }
@@ -267,7 +385,12 @@ Mesh Mesh::createCube(BasicTexture *texture)
 
 void Mesh::initializeMesh()
 {
+   if (VAO) {
+      return;
+   }
+
    glGenVertexArrays(1, &VAO);
+
    glGenBuffers(1, &VBO);
    glGenBuffers(1, &EBO);
 
@@ -414,6 +537,43 @@ void Mesh::print(llvm::raw_ostream &OS) const
    OS << "\n";
 }
 
+void ChunkMesh::addFace(Application &C, const Block &block, unsigned faceMask)
+{
+   auto &boundingBox = block.getBoundingBox();
+
+   float blockWidth = C.blockTextures.getTextureWidth();
+   float blockHeight = C.blockTextures.getTextureHeight();
+
+   Mesh *mesh;
+   if (block.is(Block::Water)) {
+      mesh = &waterMesh;
+   }
+   else if (block.isTransparent()) {
+      mesh = &translucentMesh;
+   }
+   else {
+      mesh = &terrainMesh;
+   }
+
+   for (unsigned i = 0; i < 6; ++i) {
+      if ((faceMask & (1 << i)) == 0) {
+         continue;
+      }
+
+      Block::FaceMask face = Block::face(i);
+      addCubeFace(face, mesh->Indices, mesh->Vertices, boundingBox,
+                  block.getTextureUV(face),
+                  blockWidth, blockHeight);
+   }
+}
+
+void ChunkMesh::finalize() const
+{
+   terrainMesh.initializeMesh();
+   translucentMesh.initializeMesh();
+   waterMesh.initializeMesh();
+}
+
 Model::Model(llvm::MutableArrayRef<Mesh> Meshes)
    : NumMeshes((unsigned)Meshes.size()),
      boundingBoxCalculated(false), boundingSphereCalculated(false)
@@ -546,28 +706,13 @@ const BoundingBox &Model::getBoundingBox()
       }
    }
 
-   float width = xMax - xMin;
-   float height = yMax - yMin;
-   float depth = zMax - zMin;
-
-   float halfWidth = width / 2.0f;
-   float halfHeight = height / 2.0f;
-   float halfDepth = depth / 2.0f;
-
    auto &BB = boundingBox;
-   BB.center = glm::vec3(xMin + halfWidth,
-                         yMin + halfHeight,
-                         zMin + halfDepth);
-
-   BB.corners[0] = BB.center + glm::vec3(-halfWidth, -halfHeight, halfDepth);
-   BB.corners[1] = BB.center + glm::vec3(-halfWidth, -halfHeight, -halfDepth);
-   BB.corners[2] = BB.center + glm::vec3(halfWidth, -halfHeight, halfDepth);
-   BB.corners[3] = BB.center + glm::vec3(halfWidth, -halfHeight, -halfDepth);
-
-   BB.corners[4] = BB.center + glm::vec3(-halfWidth, halfHeight, halfDepth);
-   BB.corners[5] = BB.center + glm::vec3(-halfWidth, halfHeight, -halfDepth);
-   BB.corners[6] = BB.center + glm::vec3(halfWidth, halfHeight, halfDepth);
-   BB.corners[7] = BB.center + glm::vec3(halfWidth, halfHeight, -halfDepth);
+   BB.minX = xMin;
+   BB.maxX = xMax;
+   BB.minY = yMin;
+   BB.maxY = yMax;
+   BB.minZ = zMin;
+   BB.maxZ = zMax;
 
    boundingBoxCalculated = true;
    return BB;
@@ -579,19 +724,19 @@ const BoundingSphere &Model::getBoundingSphere()
       return boundingSphere;
    }
 
-   const BoundingBox &boundingBox = getBoundingBox();
-   float maxDistance = 0.0f;
-
-   for (auto &corner : boundingBox.corners) {
-      float dist = distance(boundingBox.center, corner);
-      if (dist > maxDistance) {
-         maxDistance = dist;
-      }
-   }
-
-   boundingSphere.center = boundingBox.center;
-   boundingSphere.radius = maxDistance;
-   boundingSphereCalculated = true;
+//   const BoundingBox &boundingBox = getBoundingBox();
+//   float maxDistance = 0.0f;
+//
+//   for (auto &corner : boundingBox.corners) {
+//      float dist = distance(boundingBox.center, corner);
+//      if (dist > maxDistance) {
+//         maxDistance = dist;
+//      }
+//   }
+//
+//   boundingSphere.center = boundingBox.center();
+//   boundingSphere.radius = maxDistance;
+//   boundingSphereCalculated = true;
 
    return boundingSphere;
 }
@@ -634,16 +779,16 @@ void Model::renderWithBorders(const Shader &shader,
    glDisable(GL_STENCIL_TEST);
 }
 
-void Model::renderNormals(mc::Context &Ctx, glm::vec4 normalColor,
+void Model::renderNormals(mc::Application &Ctx, glm::vec4 normalColor,
                           glm::mat4 modelMatrix,
                           glm::mat4 viewProjectionMatrix) const {
-   auto &shader = Ctx.getShader(Context::NORMAL_SHADER);
+   auto &shader = Ctx.getShader(Application::NORMAL_SHADER);
    shader.setUniform("singleColor", normalColor);
 
    render(shader, modelMatrix, viewProjectionMatrix);
 }
 
-static void loadTexture(Context &Ctx, aiMaterial *Mat, aiTextureType Kind,
+static void loadTexture(Application &Ctx, aiMaterial *Mat, aiTextureType Kind,
                         std::vector<Texture> &Textures,
                         llvm::StringRef Path) {
    float shininess;
@@ -692,7 +837,7 @@ static void loadTexture(Context &Ctx, aiMaterial *Mat, aiTextureType Kind,
    }
 }
 
-static void processMesh(Context &Ctx, aiMesh *M, const aiScene *Scene,
+static void processMesh(Application &Ctx, aiMesh *M, const aiScene *Scene,
                         llvm::SmallVectorImpl<Mesh> &Meshes,
                         llvm::StringRef Path) {
    std::vector<Vertex> vertices;
@@ -737,7 +882,7 @@ static void processMesh(Context &Ctx, aiMesh *M, const aiScene *Scene,
    Meshes.emplace_back(move(vertices), move(indices), move(textures));
 }
 
-static void processNode(Context &Ctx, aiNode *Node, const aiScene *Scene,
+static void processNode(Application &Ctx, aiNode *Node, const aiScene *Scene,
                         llvm::SmallVectorImpl<Mesh> &Meshes,
                         llvm::StringRef Path) {
    // process all the node's meshes (if any)
@@ -751,7 +896,7 @@ static void processNode(Context &Ctx, aiNode *Node, const aiScene *Scene,
    }
 }
 
-llvm::Optional<Model> Model::loadFromFile(Context &Ctx,
+llvm::Optional<Model> Model::loadFromFile(Application &Ctx,
                                           llvm::StringRef FileName) {
    Assimp::Importer Importer;
    const aiScene *scene = Importer.ReadFile(FileName.str(),

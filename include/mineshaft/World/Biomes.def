@@ -1,0 +1,10 @@
+#ifndef MC_BIOME
+   #define MC_BIOME(NAME)
+#endif
+
+MC_BIOME(Plains)
+MC_BIOME(Forest)
+MC_BIOME(Mountains)
+
+
+#undef MC_BIOME

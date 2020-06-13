@@ -5,93 +5,85 @@ bool Block::isTransparent(BlockID blockID)
    case BlockID::Dirt: return false;
    case BlockID::Grass: return false;
    case BlockID::Stone: return false;
+   case BlockID::CobbleStone: return false;
    case BlockID::Bedrock: return false;
    case BlockID::MoonStone: return false;
+   case BlockID::Sand: return false;
+   case BlockID::OakWood: return false;
+   case BlockID::Leaf: return true;
+   case BlockID::Water: return true;
+   }
+}
+bool Block::isSolid(BlockID blockID)
+{
+   switch (blockID) {
+   case BlockID::Air: return false;
+   case BlockID::Dirt: return true;
+   case BlockID::Grass: return true;
+   case BlockID::Stone: return true;
+   case BlockID::CobbleStone: return true;
+   case BlockID::Bedrock: return true;
+   case BlockID::MoonStone: return true;
+   case BlockID::Sand: return true;
+   case BlockID::OakWood: return true;
+   case BlockID::Leaf: return true;
+   case BlockID::Water: return false;
    }
 }
 
-Block Block::createAir(Context &C, glm::vec3 position,
+Block Block::createAir(Application &app, glm::vec3 position,
                           glm::vec3 direction) {
-   Model *m;
-   if (C.isModelLoaded("Air")) {
-      m = C.getOrLoadModel("Air");
-   }
-   else {
-      Mesh mesh = Mesh::createCube(nullptr);
-      m = C.internModel("Air", Model(mesh));
-   }
-
-   return Block(BlockID::Air, m, position, direction);
+   return Block(BlockID::Air, position, direction);
 }
 
-Block Block::createDirt(Context &C, glm::vec3 position,
+Block Block::createDirt(Application &app, glm::vec3 position,
                           glm::vec3 direction) {
-   Model *m;
-   if (C.isModelLoaded("Dirt")) {
-      m = C.getOrLoadModel("Dirt");
-   }
-   else {
-      Mesh mesh = Mesh::createCube(nullptr);
-      m = C.internModel("Dirt", Model(mesh));
-   }
-
-   return Block(BlockID::Dirt, m, position, direction);
+   return Block(BlockID::Dirt, position, direction);
 }
 
-Block Block::createGrass(Context &C, glm::vec3 position,
+Block Block::createGrass(Application &app, glm::vec3 position,
                           glm::vec3 direction) {
-   Model *m;
-   if (C.isModelLoaded("Grass")) {
-      m = C.getOrLoadModel("Grass");
-   }
-   else {
-      Mesh mesh = Mesh::createCube(nullptr);
-      m = C.internModel("Grass", Model(mesh));
-   }
-
-   return Block(BlockID::Grass, m, position, direction);
+   return Block(BlockID::Grass, position, direction);
 }
 
-Block Block::createStone(Context &C, glm::vec3 position,
+Block Block::createStone(Application &app, glm::vec3 position,
                           glm::vec3 direction) {
-   Model *m;
-   if (C.isModelLoaded("Stone")) {
-      m = C.getOrLoadModel("Stone");
-   }
-   else {
-      Mesh mesh = Mesh::createCube(nullptr);
-      m = C.internModel("Stone", Model(mesh));
-   }
-
-   return Block(BlockID::Stone, m, position, direction);
+   return Block(BlockID::Stone, position, direction);
 }
 
-Block Block::createBedrock(Context &C, glm::vec3 position,
+Block Block::createCobbleStone(Application &app, glm::vec3 position,
                           glm::vec3 direction) {
-   Model *m;
-   if (C.isModelLoaded("Bedrock")) {
-      m = C.getOrLoadModel("Bedrock");
-   }
-   else {
-      Mesh mesh = Mesh::createCube(nullptr);
-      m = C.internModel("Bedrock", Model(mesh));
-   }
-
-   return Block(BlockID::Bedrock, m, position, direction);
+   return Block(BlockID::CobbleStone, position, direction);
 }
 
-Block Block::createMoonStone(Context &C, glm::vec3 position,
+Block Block::createBedrock(Application &app, glm::vec3 position,
                           glm::vec3 direction) {
-   Model *m;
-   if (C.isModelLoaded("MoonStone")) {
-      m = C.getOrLoadModel("MoonStone");
-   }
-   else {
-      Mesh mesh = Mesh::createCube(nullptr);
-      m = C.internModel("MoonStone", Model(mesh));
-   }
+   return Block(BlockID::Bedrock, position, direction);
+}
 
-   return Block(BlockID::MoonStone, m, position, direction);
+Block Block::createMoonStone(Application &app, glm::vec3 position,
+                          glm::vec3 direction) {
+   return Block(BlockID::MoonStone, position, direction);
+}
+
+Block Block::createSand(Application &app, glm::vec3 position,
+                          glm::vec3 direction) {
+   return Block(BlockID::Sand, position, direction);
+}
+
+Block Block::createOakWood(Application &app, glm::vec3 position,
+                          glm::vec3 direction) {
+   return Block(BlockID::OakWood, position, direction);
+}
+
+Block Block::createLeaf(Application &app, glm::vec3 position,
+                          glm::vec3 direction) {
+   return Block(BlockID::Leaf, position, direction);
+}
+
+Block Block::createWater(Application &app, glm::vec3 position,
+                          glm::vec3 direction) {
+   return Block(BlockID::Water, position, direction);
 }
 bool Block::usesCubeMap(BlockID blockID)
 {
@@ -100,173 +92,44 @@ bool Block::usesCubeMap(BlockID blockID)
    case BlockID::Dirt: return false;
    case BlockID::Grass: return true;
    case BlockID::Stone: return false;
+   case BlockID::CobbleStone: return false;
    case BlockID::Bedrock: return false;
    case BlockID::MoonStone: return false;
+   case BlockID::Sand: return false;
+   case BlockID::OakWood: return true;
+   case BlockID::Leaf: return false;
+   case BlockID::Water: return false;
    }
 }
-unsigned Block::getTextureLayer(BlockID blockID)
+glm::vec2 Block::getTextureUV(BlockID blockID, FaceMask face)
 {
    switch (blockID) {
-   case BlockID::Air: return 0;
-   case BlockID::Dirt: return 1;
-   case BlockID::Grass: return 0;
-   case BlockID::Stone: return 2;
-   case BlockID::Bedrock: return 3;
-   case BlockID::MoonStone: return 4;
+   case BlockID::Air: return glm::vec2(3.750000e-01, 5.000000e-01);
+   case BlockID::Dirt: return glm::vec2(0.000000e+00, 5.000000e-01);
+   case BlockID::Grass:       switch (face) {
+      case F_Right: return glm::vec2(2.500000e-01, 0.000000e+00);
+      case F_Left: return glm::vec2(2.500000e-01, 0.000000e+00);
+      case F_Top: return glm::vec2(8.750000e-01, 0.000000e+00);
+      case F_Bottom: return glm::vec2(0.000000e+00, 5.000000e-01);
+      case F_Front: return glm::vec2(2.500000e-01, 0.000000e+00);
+      case F_Back: return glm::vec2(2.500000e-01, 0.000000e+00);
+      default: llvm_unreachable("not a valid cube face");
+      }
+   case BlockID::Stone: return glm::vec2(5.000000e-01, 0.000000e+00);
+   case BlockID::CobbleStone: return glm::vec2(7.500000e-01, 0.000000e+00);
+   case BlockID::Bedrock: return glm::vec2(2.500000e-01, 5.000000e-01);
+   case BlockID::MoonStone: return glm::vec2(0.000000e+00, 0.000000e+00);
+   case BlockID::Sand: return glm::vec2(3.750000e-01, 0.000000e+00);
+   case BlockID::OakWood:       switch (face) {
+      case F_Right: return glm::vec2(5.000000e-01, 5.000000e-01);
+      case F_Left: return glm::vec2(5.000000e-01, 5.000000e-01);
+      case F_Top: return glm::vec2(6.250000e-01, 0.000000e+00);
+      case F_Bottom: return glm::vec2(6.250000e-01, 0.000000e+00);
+      case F_Front: return glm::vec2(5.000000e-01, 5.000000e-01);
+      case F_Back: return glm::vec2(5.000000e-01, 5.000000e-01);
+      default: llvm_unreachable("not a valid cube face");
+      }
+   case BlockID::Leaf: return glm::vec2(1.250000e-01, 5.000000e-01);
+   case BlockID::Water: return glm::vec2(1.250000e-01, 0.000000e+00);
    }
 }
-
-TextureArray Block::loadBlockTextures()
-{
-   TextureArray texArray = TextureArray::create(BasicTexture::DIFFUSE,
-                                               16,
-                                               16,
-                                               5);
-
-   llvm::SmallString<64> fileName;
-   fileName += "../assets/textures/";
-
-   size_t initialSize = fileName.size();
-
-   {
-      fileName += "air.png";
-
-      sf::Image Img;
-      if (Img.loadFromFile(fileName.str())) {
-         texArray.addTexture(Img, 0);
-      }
-
-      fileName.resize(initialSize);
-   }
-
-   {
-      fileName += "dirt.png";
-
-      sf::Image Img;
-      if (Img.loadFromFile(fileName.str())) {
-         texArray.addTexture(Img, 1);
-      }
-
-      fileName.resize(initialSize);
-   }
-
-   {
-      fileName += "stone.png";
-
-      sf::Image Img;
-      if (Img.loadFromFile(fileName.str())) {
-         texArray.addTexture(Img, 2);
-      }
-
-      fileName.resize(initialSize);
-   }
-
-   {
-      fileName += "bedrock.png";
-
-      sf::Image Img;
-      if (Img.loadFromFile(fileName.str())) {
-         texArray.addTexture(Img, 3);
-      }
-
-      fileName.resize(initialSize);
-   }
-
-   {
-      fileName += "moon_stone.png";
-
-      sf::Image Img;
-      if (Img.loadFromFile(fileName.str())) {
-         texArray.addTexture(Img, 4);
-      }
-
-      fileName.resize(initialSize);
-   }
-
-   texArray.finalize();
-   return texArray;
-}
-
-
-TextureArray Block::loadBlockCubeMapTextures()
-{
-   TextureArray texArray = TextureArray::createCubemap(BasicTexture::DIFFUSE,
-                                                        16,
-                                                        16,
-                                                        5);
-
-   llvm::SmallString<64> fileName;
-   fileName += "../assets/textures/";
-
-   size_t initialSize = fileName.size();
-
-   {
-      fileName += "grass_side.png";
-
-      sf::Image Img;
-      if (Img.loadFromFile(fileName.str())) {
-         texArray.addTexture(Img, 0, 0);
-      }
-
-      fileName.resize(initialSize);
-   }
-
-   {
-      fileName += "grass_side.png";
-
-      sf::Image Img;
-      if (Img.loadFromFile(fileName.str())) {
-         texArray.addTexture(Img, 0, 1);
-      }
-
-      fileName.resize(initialSize);
-   }
-
-   {
-      fileName += "grass_top.png";
-
-      sf::Image Img;
-      if (Img.loadFromFile(fileName.str())) {
-         texArray.addTexture(Img, 0, 2);
-      }
-
-      fileName.resize(initialSize);
-   }
-
-   {
-      fileName += "dirt.png";
-
-      sf::Image Img;
-      if (Img.loadFromFile(fileName.str())) {
-         texArray.addTexture(Img, 0, 3);
-      }
-
-      fileName.resize(initialSize);
-   }
-
-   {
-      fileName += "grass_side.png";
-
-      sf::Image Img;
-      if (Img.loadFromFile(fileName.str())) {
-         texArray.addTexture(Img, 0, 4);
-      }
-
-      fileName.resize(initialSize);
-   }
-
-   {
-      fileName += "grass_side.png";
-
-      sf::Image Img;
-      if (Img.loadFromFile(fileName.str())) {
-         texArray.addTexture(Img, 0, 5);
-      }
-
-      fileName.resize(initialSize);
-   }
-
-   texArray.finalize();
-   return texArray;
-}
-

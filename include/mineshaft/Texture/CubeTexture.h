@@ -1,7 +1,3 @@
-//
-// Created by Jonas Zell on 2019-01-17.
-//
-
 #ifndef MINEKAMPF_CUBETEXTURE_H
 #define MINEKAMPF_CUBETEXTURE_H
 

@@ -1,8 +1,6 @@
-//
-// Created by Jonas Zell on 2019-01-22.
-//
-
 #include "mineshaft/World/Chunk.h"
+
+#include "mineshaft/Application.h"
 #include "mineshaft/World/World.h"
 
 using namespace mc;
@@ -28,7 +26,7 @@ const Block &ChunkSegment::getBlockAt(const BlockPositionChunk &pos) const
 }
 
 Chunk::Chunk()
-   : world(nullptr), chunkSegments{nullptr}, x(0), z(0)
+   : world(nullptr), chunkSegments{}, x(0), z(0)
 {
    std::memset(chunkSegments, 0, sizeof(chunkSegments));
 }
@@ -40,35 +38,32 @@ Chunk::Chunk(World *world, int x, int z)
 }
 
 Chunk::Chunk(mc::Chunk &&Other) noexcept
-   : world(Other.world), chunkSegments{}, x(Other.x), z(Other.z)
+   : Chunk()
 {
+   std::swap(world, Other.world);
+   std::swap(x, Other.x);
+   std::swap(z, Other.z);
+   std::swap(chunkMesh, Other.chunkMesh);
+   std::swap(boundingBox, Other.boundingBox);
+
    for (unsigned i = 0; i < (MC_CHUNK_HEIGHT / MC_CHUNK_SEGMENT_HEIGHT); ++i) {
-      chunkSegments[i] = Other.chunkSegments[i];
-      Other.chunkSegments[i] = nullptr;
+      std::swap(chunkSegments[i], Other.chunkSegments[i]);
    }
 }
 
 Chunk& Chunk::operator=(Chunk &&Other) noexcept
 {
-   this->~Chunk();
-
-   world = Other.world;
-   x = Other.x;
-   z = Other.z;
+   std::swap(world, Other.world);
+   std::swap(x, Other.x);
+   std::swap(z, Other.z);
+   std::swap(chunkMesh, Other.chunkMesh);
+   std::swap(boundingBox, Other.boundingBox);
 
    for (unsigned i = 0; i < (MC_CHUNK_HEIGHT / MC_CHUNK_SEGMENT_HEIGHT); ++i) {
-      chunkSegments[i] = Other.chunkSegments[i];
-      Other.chunkSegments[i] = nullptr;
+      std::swap(chunkSegments[i], Other.chunkSegments[i]);
    }
 
    return *this;
-}
-
-Chunk::~Chunk()
-{
-   for (auto *seg : chunkSegments) {
-      delete seg;
-   }
 }
 
 void Chunk::initialize(World *world, int x, int z)
@@ -85,32 +80,103 @@ void Chunk::initialize(World *world, int x, int z)
    static constexpr float hheight = height / 2.0f;
    static constexpr float hdepth = depth / 2.0f;
 
-   boundingBox.center = glm::vec3(x * width + hwidth, 0.0f, z * width + hdepth);
+   boundingBox.minX = -hwidth;
+   boundingBox.maxX = hwidth;
 
-   boundingBox.corners[0] = boundingBox.center + glm::vec3(-hwidth, -hheight, hdepth);
-   boundingBox.corners[1] = boundingBox.center + glm::vec3(-hwidth, -hheight, -hdepth);
-   boundingBox.corners[2] = boundingBox.center + glm::vec3(hwidth, -hheight, hdepth);
-   boundingBox.corners[3] = boundingBox.center + glm::vec3(hwidth, -hheight, -hdepth);
+   boundingBox.minY = -hheight;
+   boundingBox.maxY = hheight;
 
-   boundingBox.corners[4] = boundingBox.center + glm::vec3(-hwidth, hheight, hdepth);
-   boundingBox.corners[5] = boundingBox.center + glm::vec3(-hwidth, hheight, -hdepth);
-   boundingBox.corners[6] = boundingBox.center + glm::vec3(hwidth, hheight, hdepth);
-   boundingBox.corners[7] = boundingBox.center + glm::vec3(hwidth, hheight, -hdepth);
+   boundingBox.minZ = -hdepth;
+   boundingBox.maxZ = hdepth;
+
+   boundingBox.applyOffset(glm::vec3(x * width + hwidth, 0.0f, z * depth + hdepth));
 }
 
-const Block &Chunk::getBlockAt(const WorldPosition &pos) const
+const Block *Chunk::getBlockAt(const WorldPosition &pos) const
 {
    return const_cast<Chunk*>(this)->getBlockAt(pos);
 }
 
-Block &Chunk::getBlockAt(const WorldPosition &pos)
+Block *Chunk::getBlockAt(const WorldPosition &pos)
 {
+   if (pos.x >= (this->x + 1) * MC_CHUNK_WIDTH
+   || pos.x < this->x * MC_CHUNK_WIDTH
+   || pos.z >= (this->z + 1) * MC_CHUNK_DEPTH
+   || pos.z < this->z * MC_CHUNK_DEPTH) {
+      return nullptr;
+   }
+
    auto *seg = getSegmentForYCoord(pos.y);
-   return seg->getBlockAt(getPositionInChunk(pos));
+   if (!seg) {
+      return nullptr;
+   }
+
+   return &seg->getBlockAt(getPositionInChunk(pos));
+}
+
+void Chunk::updateBlock(const mc::WorldPosition &pos,
+                        mc::Block &&block,
+                        bool recheckVisibility) {
+   if (pos.x >= (this->x + 1) * MC_CHUNK_WIDTH
+       || pos.x < this->x * MC_CHUNK_WIDTH
+       || pos.z >= (this->z + 1) * MC_CHUNK_DEPTH
+       || pos.z < this->z * MC_CHUNK_DEPTH) {
+      return;
+   }
+
+   auto *seg = getSegmentForYCoord(pos.y);
+   if (!seg) {
+      return;
+   }
+
+   seg->airOnly &= block.is(Block::Air);
+
+   Block &blockRef = seg->getBlockAt(getPositionInChunk(pos));
+   blockRef = std::move(block);
+
+   if (recheckVisibility) {
+      modifiedBlock(getPositionInChunk(pos));
+   }
+}
+
+void Chunk::modifiedBlock(const mc::BlockPositionChunk &pos)
+{
+   visibilityCalculated = false;
+
+   // Check bordering chunks.
+   if (pos.x == 0) {
+      auto *other = world->getChunk(ChunkPosition(this->x - 1, this->z), false);
+      if (other) {
+         other->visibilityCalculated = false;
+      }
+   }
+   if (pos.x == 15) {
+      auto *other = world->getChunk(ChunkPosition(this->x + 1, this->z), false);
+      if (other) {
+         other->visibilityCalculated = false;
+      }
+   }
+
+   if (pos.z == 0) {
+      auto *other = world->getChunk(ChunkPosition(this->x, this->z - 1), false);
+      if (other) {
+         other->visibilityCalculated = false;
+      }
+   }
+   if (pos.z == 15) {
+      auto *other = world->getChunk(ChunkPosition(this->x, this->z + 1), false);
+      if (other) {
+         other->visibilityCalculated = false;
+      }
+   }
 }
 
 ChunkSegment* Chunk::getSegmentForYCoord(int y, bool initialize)
 {
+   if (y >= (MC_CHUNK_HEIGHT / 2) || y < -(MC_CHUNK_HEIGHT / 2)) {
+      return nullptr;
+   }
+
    // Account for negative y coordinates.
    y += MC_CHUNK_HEIGHT / 2;
 
@@ -121,7 +187,7 @@ ChunkSegment* Chunk::getSegmentForYCoord(int y, bool initialize)
       return seg;
    }
 
-   seg = new ChunkSegment;
+   seg = new(world->getApplication()) ChunkSegment;
    return seg;
 }
 
@@ -144,16 +210,68 @@ ChunkPosition Chunk::getChunkPosition() const
    return ChunkPosition(x, z);
 }
 
-void Chunk::fillLayerWith(Context &Ctx, int y, const Block &block)
+void Chunk::fillLayerWith(Application &Ctx, int y, const Block &block, unsigned holeFrequency)
 {
    ChunkSegment *seg = getSegmentForYCoord(y);
 
    for (unsigned x = 0; x < MC_CHUNK_WIDTH; ++x) {
       for (unsigned z = 0; z < MC_CHUNK_DEPTH; ++z) {
          BlockPositionChunk pos(x, y, z);
-         new (&seg->getBlockAt(pos))
-            Block(block, getScenePosition(getWorldPosition(pos)));
+
+         if (!holeFrequency || rand() > RAND_MAX / holeFrequency) {
+            new(&seg->getBlockAt(pos))
+               Block(block, getScenePosition(getWorldPosition(pos)));
+         }
       }
+   }
+}
+
+static void visitBlockNeighbours(World *world, Chunk *chunk,
+                                 Block *blockPtr, int segmentMax, int segmentMin,
+                                 int ox, int oy, int oz,
+                                 bool isWater, bool &foundTransparentBlock,
+                                 unsigned &faceMask) {
+   static constexpr int offsets[][3] = {
+      { 1, 0, 0 },  // Right
+      { -1, 0, 0 }, // Left
+      { 0, 1, 0 },  // Top
+      { 0, -1, 0 }, // Bottom
+      { 0, 0, 1 },  // Front
+      { 0, 0, -1 }, // Back
+   };
+
+   unsigned i = 0;
+   for (auto &offset : offsets) {
+      int x = ox + offset[0], y = oy + offset[1], z = oz + offset[2];
+
+      int indexY = y;
+      indexY += MC_CHUNK_HEIGHT / 2;
+      indexY %= MC_CHUNK_SEGMENT_HEIGHT;
+
+      const Block *neighbour;
+      if (x < 0 || x >= MC_CHUNK_WIDTH
+          || z < 0 || z >= MC_CHUNK_WIDTH
+          || y < segmentMin || y >= segmentMax) {
+         auto worldPos = chunk->getWorldPosition(BlockPositionChunk(x, y, z));
+         neighbour = world->getBlock(worldPos);
+      }
+      else {
+         neighbour = &blockPtr[x + MC_CHUNK_WIDTH * (indexY + MC_CHUNK_SEGMENT_HEIGHT * z)];
+      }
+
+      if (neighbour && neighbour->isTransparent()) {
+         // Don't render water blocks next to other water blocks.
+         if (!isWater || !neighbour->is(Block::Water)) {
+            faceMask |= Block::face(i);
+         }
+
+         foundTransparentBlock = true;
+      }
+      else if (!neighbour) {
+         foundTransparentBlock = true;
+      }
+
+      ++i;
    }
 }
 
@@ -163,47 +281,65 @@ void Chunk::updateVisibility()
       return;
    }
 
-   std::array<const Block*, 6> neighbours{};
-   visibilityCalculated = true;
+   auto &app = world->getApplication();
 
-   unsigned segmentY = 0;
-   for (auto *seg : chunkSegments) {
-      if (!seg) {
-         ++segmentY;
+   visibilityCalculated = true;
+   chunkMesh = ChunkMesh();
+
+//   Timer timer("Creating chunk mesh");
+
+   int y = (MC_CHUNK_HEIGHT / 2) - 1;
+   bool done = false;
+
+   for (int segNo = (MC_CHUNK_HEIGHT / MC_CHUNK_SEGMENT_HEIGHT) - 1; segNo >= 0; --segNo) {
+      auto *seg = chunkSegments[segNo];
+      if (!seg || seg->airOnly) {
+         y -= MC_CHUNK_SEGMENT_HEIGHT;
          continue;
       }
 
-      for (auto &block : seg->getBlocks()) {
-         // A block is visible if any of its neighbours are transparent.
-         world->getBlockNeighbours(block, neighbours);
+      Block *blockPtr = seg->getBlocks().data();
 
-         bool visible = false;
-         for (auto &neighbour : neighbours) {
-            if (neighbour && neighbour->isTransparent()) {
-               visible = true;
-               break;
+      int segmentMax = y;
+      int endY = y - MC_CHUNK_SEGMENT_HEIGHT;
+      while (y > endY) {
+         bool foundTransparentBlock = false;
+
+         int indexY = y;
+         indexY += MC_CHUNK_HEIGHT / 2;
+         indexY %= MC_CHUNK_SEGMENT_HEIGHT;
+
+         for (int x = 0; x < MC_CHUNK_WIDTH; ++x) {
+            for (int z = 0; z < MC_CHUNK_DEPTH; ++z) {
+               auto &block = blockPtr[x + MC_CHUNK_WIDTH * (indexY + MC_CHUNK_SEGMENT_HEIGHT * z)];
+               if (block.is(Block::Air)) {
+                  foundTransparentBlock = true;
+                  continue;
+               }
+
+               foundTransparentBlock |= block.isTransparent();
+
+               unsigned faceMask = Block::F_None;
+               visitBlockNeighbours(world, this, blockPtr, segmentMax, endY, x,
+                                    y, z, block.is(Block::Water),
+                                    foundTransparentBlock, faceMask);
+
+               if (faceMask != Block::F_None) {
+                  chunkMesh.addFace(app, block, faceMask);
+               }
             }
          }
 
-         block.setVisible(visible);
+         if (!foundTransparentBlock) {
+            done = true;
+            break;
+         }
+
+         --y;
       }
-   }
-}
 
-void Chunk::updateVisibility(mc::Block &block)
-{
-   std::array<const Block*, 6> neighbours{};
-
-   // A block is visible if any of its neighbours are transparent.
-   world->getBlockNeighbours(block, neighbours);
-
-   bool visible = false;
-   for (auto &neighbour : neighbours) {
-      if (neighbour && neighbour->isTransparent()) {
-         visible = true;
+      if (done) {
          break;
       }
    }
-
-   block.setVisible(visible);
 }

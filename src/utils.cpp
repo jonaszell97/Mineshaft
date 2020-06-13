@@ -1,7 +1,3 @@
-//
-// Created by Jonas Zell on 2019-01-19.
-//
-
 #include "mineshaft/utils.h"
 
 #include <llvm/Support/FileSystem.h>
@@ -140,6 +136,22 @@ long long Timer::getTime() const
 {
    return std::chrono::duration_cast<std::chrono::microseconds>(
       std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+}
+
+
+llvm::raw_ostream &operator<<(llvm::raw_ostream &OS, const ScenePosition &pos)
+{
+   return OS << "ScenePosition(" << pos.x << ", " << pos.y << ", " << pos.z << ")";
+}
+
+llvm::raw_ostream &operator<<(llvm::raw_ostream &OS, const WorldPosition &pos)
+{
+   return OS << "WorldPosition(" << pos.x << ", " << pos.y << ", " << pos.z << ")";
+}
+
+llvm::raw_ostream &operator<<(llvm::raw_ostream &OS, const ChunkPosition &pos)
+{
+   return OS << "ChunkPosition(" << pos.x << ", " << pos.z << ")";
 }
 
 } // namespace mc

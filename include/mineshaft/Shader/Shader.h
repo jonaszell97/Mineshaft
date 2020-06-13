@@ -1,7 +1,3 @@
-//
-// Created by Jonas Zell on 2019-01-19.
-//
-
 #ifndef MINEKAMPF_SHADER_H
 #define MINEKAMPF_SHADER_H
 
@@ -10,7 +6,7 @@
 
 namespace mc {
 
-class Context;
+class Application;
 
 class Shader {
    /// Program ID of this shader.
@@ -19,7 +15,7 @@ class Shader {
    /// Private C'tor.
    explicit Shader(unsigned ProgramID);
 
-   friend class Context;
+   friend class Application;
 
 public:
    /// Cleans up the shader program.

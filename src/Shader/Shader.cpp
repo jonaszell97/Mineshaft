@@ -1,7 +1,3 @@
-//
-// Created by Jonas Zell on 2019-01-19.
-//
-
 #include "mineshaft/Shader/Shader.h"
 
 #include <GL/glew.h>

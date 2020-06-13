@@ -1,14 +1,13 @@
-//
-// Created by Jonas Zell on 2019-01-22.
-//
-
 #include "mineshaft/Config.h"
+#include "mineshaft/World/Block.h"
 
 #include <tblgen/Record.h>
 #include <tblgen/Value.h>
 #include <tblgen/Support/Casting.h>
 
 #include <llvm/Support/raw_ostream.h>
+#include <SFML/Graphics/Image.hpp>
+#include <llvm/ADT/SmallString.h>
 
 using namespace tblgen;
 using namespace tblgen::support;
@@ -52,20 +51,24 @@ class BlockFunctionEmitter {
    RecordKeeper &RK;
 
    unsigned numTextures = 0;
-   unsigned numCubemapTextures = 0;
-
    llvm::StringMap<unsigned> textureIDs;
-   llvm::StringMap<unsigned> cubemapTextureIDs;
+
    llvm::DenseMap<Record*, bool> usesCubeMap;
    llvm::DenseMap<Record*, std::string> textureNames;
 
+   float atlasWidth = 0.0f;
+   float atlasHeight = 0.0f;
+
    llvm::StringRef getTextureName(Record *block);
+   glm::vec2 getTextureUV(Record *block, unsigned face);
 
    void emitIsTransparent(llvm::ArrayRef<Record*> blocks);
+   void emitIsSolid(llvm::ArrayRef<Record*> blocks);
    void emitUseCubeMap(llvm::ArrayRef<Record*> blocks);
-   void emitGetTextureLayer(llvm::ArrayRef<Record *> blocks);
-   void emitLoadTextures(llvm::ArrayRef<Record *> blocks);
+   void emitGetTextureUV(llvm::ArrayRef<Record *> blocks);
    void emitCreate(Record *block);
+
+   void emitTextureAtlas();
 
 public:
    BlockFunctionEmitter(llvm::raw_ostream &OS, RecordKeeper &RK)
@@ -83,14 +86,15 @@ void BlockFunctionEmitter::Emit()
    RK.getAllDefinitionsOf("Block", blocks);
 
    emitIsTransparent(blocks);
+   emitIsSolid(blocks);
 
    for (auto *block : blocks) {
       emitCreate(block);
    }
 
    emitUseCubeMap(blocks);
-   emitGetTextureLayer(blocks);
-   emitLoadTextures(blocks);
+   emitTextureAtlas();
+   emitGetTextureUV(blocks);
 }
 
 llvm::StringRef BlockFunctionEmitter::getTextureName(Record *block)
@@ -114,6 +118,35 @@ llvm::StringRef BlockFunctionEmitter::getTextureName(Record *block)
    return textureName;
 }
 
+glm::vec2 BlockFunctionEmitter::getTextureUV(Record *block, unsigned face)
+{
+   llvm::StringRef textureName;
+   if (usesCubeMap[block]) {
+      auto *givenTextures = cast<ListLiteral>(block->getFieldValue("textures"));
+      textureName = cast<StringLiteral>(givenTextures->getValues()[face])->getVal();
+   }
+   else {
+      textureName = getTextureName(block);
+   }
+
+   float x = 0;
+   float z = 0;
+
+   for (auto &textureIDPair : textureIDs) {
+      if (textureIDPair.getKey() == textureName) {
+         break;
+      }
+
+      x += 16.f;
+      if (x == (8.f * 16.f)) {
+         z += 16.f;
+         x = 0.f;
+      }
+   }
+
+   return glm::vec2(x / atlasWidth, z / atlasHeight);
+}
+
 void BlockFunctionEmitter::emitIsTransparent(llvm::ArrayRef<Record *> blocks)
 {
    OS << "bool Block::isTransparent(BlockID blockID)\n{\n";
@@ -122,6 +155,22 @@ void BlockFunctionEmitter::emitIsTransparent(llvm::ArrayRef<Record *> blocks)
    for (auto *block : blocks) {
       bool transparent = support::cast<IntegerLiteral>(
          block->getFieldValue("transparent"))->getVal().getBoolValue();
+
+      OS << "   case BlockID::" << block->getName() << ": return "
+         << (transparent ? "true" : "false") << ";\n";
+   }
+
+   OS << "   }\n}\n";
+}
+
+void BlockFunctionEmitter::emitIsSolid(llvm::ArrayRef<Record *> blocks)
+{
+   OS << "bool Block::isSolid(BlockID blockID)\n{\n";
+   OS << "   switch (blockID) {\n";
+
+   for (auto *block : blocks) {
+      bool transparent = support::cast<IntegerLiteral>(
+         block->getFieldValue("solid"))->getVal().getBoolValue();
 
       OS << "   case BlockID::" << block->getName() << ": return "
          << (transparent ? "true" : "false") << ";\n";
@@ -143,124 +192,40 @@ void BlockFunctionEmitter::emitUseCubeMap(llvm::ArrayRef<Record *> blocks)
    OS << "   }\n}\n";
 }
 
-void BlockFunctionEmitter::emitGetTextureLayer(llvm::ArrayRef<Record *> blocks)
+void BlockFunctionEmitter::emitGetTextureUV(llvm::ArrayRef<Record*> blocks)
 {
-   OS << "unsigned Block::getTextureLayer(BlockID blockID)\n{\n";
+   OS << "glm::vec2 Block::getTextureUV(BlockID blockID, FaceMask face)\n{\n";
    OS << "   switch (blockID) {\n";
 
    for (auto *block : blocks) {
-      OS << "   case BlockID::" << block->getName() << ": return ";
+      OS << "   case BlockID::" << block->getName() << ": ";
 
       if (usesCubeMap[block]) {
-         OS << "0;\n";
+         OS << "      switch (face) {\n";
+
+         static const char *names[] = {
+            "F_Right", "F_Left",
+            "F_Top", "F_Bottom",
+            "F_Front", "F_Back",
+         };
+
+         for (unsigned i = 0; i < 6; ++i) {
+            OS << "      case " << names[i] << ": return ";
+
+            auto UV = getTextureUV(block, i);
+            OS << "glm::vec2(" << UV.x << ", " << UV.y << ");\n";
+         }
+
+         OS << "      default: llvm_unreachable(\"not a valid cube face\");\n";
+         OS << "      }\n";
       }
       else {
-         unsigned id = textureIDs[getTextureName(block)];
-         OS << id << ";\n";
+         auto UV = getTextureUV(block, 0);
+         OS << "return glm::vec2(" << UV.x << ", " << UV.y << ");\n";
       }
    }
 
    OS << "   }\n}\n";
-}
-
-void BlockFunctionEmitter::emitLoadTextures(llvm::ArrayRef<Record*> blocks)
-{
-   unsigned height = MC_TEXTURE_HEIGHT;
-   unsigned width = MC_TEXTURE_WIDTH;
-   unsigned layers = textureIDs.size();
-
-   OS << R"__(
-TextureArray Block::loadBlockTextures()
-{
-   TextureArray texArray = TextureArray::create(BasicTexture::DIFFUSE,
-                                               )__" << height << R"__(,
-                                               )__" << width << R"__(,
-                                               )__" << layers << R"__();
-
-   llvm::SmallString<64> fileName;
-   fileName += "../assets/textures/";
-
-   size_t initialSize = fileName.size();
-)__";
-
-   for (auto *block : blocks) {
-      if (usesCubeMap[block]) {
-         continue;
-      }
-
-      auto defaultTexture = getTextureName(block);
-      unsigned id = textureIDs[defaultTexture];
-
-      OS << R"__(
-   {
-      fileName += ")__" << defaultTexture << R"__(.png";
-
-      sf::Image Img;
-      if (Img.loadFromFile(fileName.str())) {
-         texArray.addTexture(Img, )__" << id << R"__();
-      }
-
-      fileName.resize(initialSize);
-   }
-)__";
-   }
-
-   OS << R"__(
-   texArray.finalize();
-   return texArray;
-}
-
-)__";
-
-   OS << R"__(
-TextureArray Block::loadBlockCubeMapTextures()
-{
-   TextureArray texArray = TextureArray::createCubemap(BasicTexture::DIFFUSE,
-                                                        )__" << height << R"__(,
-                                                        )__" << width << R"__(,
-                                                        )__" << layers << R"__();
-
-   llvm::SmallString<64> fileName;
-   fileName += "../assets/textures/";
-
-   size_t initialSize = fileName.size();
-)__";
-
-   for (auto *block : blocks) {
-      if (!usesCubeMap[block]) {
-         continue;
-      }
-
-      auto *givenTextures = cast<ListLiteral>(block->getFieldValue("textures"));
-      auto defaultTexture = getTextureName(block);
-
-      unsigned id = cubemapTextureIDs[defaultTexture];
-
-      unsigned i = 0;
-      for (Value *t : givenTextures->getValues()) {
-         llvm::StringRef tex = cast<StringLiteral>(t)->getVal();
-
-         OS << R"__(
-   {
-      fileName += ")__" << tex << R"__(.png";
-
-      sf::Image Img;
-      if (Img.loadFromFile(fileName.str())) {
-         texArray.addTexture(Img, )__" << id << R"__(, )__" << i++ << R"__();
-      }
-
-      fileName.resize(initialSize);
-   }
-)__";
-      }
-   }
-
-   OS << R"__(
-   texArray.finalize();
-   return texArray;
-}
-
-)__";
 }
 
 void BlockFunctionEmitter::emitCreate(Record *block)
@@ -284,36 +249,66 @@ void BlockFunctionEmitter::emitCreate(Record *block)
       usesCubeMap[block] = false;
    }
    else {
-      auto defaultTexture = getTextureName(block);
-      auto It = cubemapTextureIDs.find(defaultTexture);
+      for (auto *tex : givenTextures->getValues()) {
+         auto defaultTexture = cast<StringLiteral>(tex)->getVal();
+         auto It = textureIDs.find(defaultTexture);
 
-      unsigned id;
-      if (It != cubemapTextureIDs.end()) {
-         id = It->getValue();
-      }
-      else {
-         id = numCubemapTextures++;
-         cubemapTextureIDs[defaultTexture] = id;
+         unsigned id;
+         if (It != textureIDs.end()) {
+            id = It->getValue();
+         }
+         else {
+            id = numTextures++;
+            textureIDs[defaultTexture] = id;
+         }
       }
 
       usesCubeMap[block] = true;
    }
 
    OS << R"__(
-Block Block::create)__" << name << R"__((Context &C, glm::vec3 position,
+Block Block::create)__" << name << R"__((Application &app, glm::vec3 position,
                           glm::vec3 direction) {
-   Model *m;
-   if (C.isModelLoaded(")__" << name << R"__(")) {
-      m = C.getOrLoadModel(")__" << name << R"__(");
-   }
-   else {
-      Mesh mesh = Mesh::createCube(nullptr);
-      m = C.internModel(")__" << name << R"__(", Model(mesh));
-   }
-
-   return Block(BlockID::)__" << name << R"__(, m, position, direction);
+   return Block(BlockID::)__" << name << R"__(, position, direction);
 }
 )__";
+}
+
+void BlockFunctionEmitter::emitTextureAtlas()
+{
+   llvm::SmallString<128> textureName;
+   textureName += "/Users/Jonas/mineshaft/assets/textures/";
+
+   atlasWidth = 8.f * 16.f;
+   atlasHeight = (unsigned)(std::ceil((float)textureIDs.size() / 8.0f)) * 16;
+
+   sf::Image joined;
+   joined.create(atlasWidth, atlasHeight);
+
+   unsigned x = 0;
+   unsigned z = 0;
+
+   size_t initialSize = textureName.size();
+   for (auto &textureIDPair : textureIDs) {
+      textureName += textureIDPair.getKey();
+      textureName += ".png";
+
+      sf::Image img;
+      if (img.loadFromFile(textureName.str())) {
+         joined.copy(img, x, z, sf::IntRect(0, 0, 16, 16), false);
+      }
+
+      x += 16;
+      if (x == (8 * 16)) {
+         z += 16;
+         x = 0;
+      }
+
+      textureName.resize(initialSize);
+   }
+
+   textureName += "blocks.png";
+   joined.saveToFile(textureName.str());
 }
 
 extern "C" {

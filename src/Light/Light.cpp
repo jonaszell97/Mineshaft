@@ -1,7 +1,3 @@
-//
-// Created by Jonas Zell on 2019-01-20.
-//
-
 #include "mineshaft/Light/Light.h"
 
 using namespace mc;

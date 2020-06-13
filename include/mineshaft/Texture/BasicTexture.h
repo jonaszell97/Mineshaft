@@ -1,7 +1,3 @@
-//
-// Created by Jonas Zell on 2019-01-17.
-//
-
 #ifndef MINEKAMPF_BASICTEXTURE_H
 #define MINEKAMPF_BASICTEXTURE_H
 
@@ -17,7 +13,7 @@
 
 namespace mc {
 
-class Context;
+class Application;
 
 class BasicTexture: public llvm::FoldingSetNode {
 public:
@@ -44,7 +40,7 @@ public:
    BasicTexture(const BasicTexture&) = delete;
    BasicTexture &operator=(const BasicTexture&) = delete;
 
-   friend class Context;
+   friend class Application;
 
    void Profile(llvm::FoldingSetNodeID &ID);
    static void Profile(llvm::FoldingSetNodeID &ID, Kind K,

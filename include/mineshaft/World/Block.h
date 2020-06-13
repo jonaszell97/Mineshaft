@@ -1,7 +1,3 @@
-//
-// Created by Jonas Zell on 2019-01-22.
-//
-
 #ifndef OPENGLTEST_BLOCK_H
 #define OPENGLTEST_BLOCK_H
 
@@ -13,7 +9,7 @@
 namespace mc {
 
 class Camera;
-class Context;
+class Application;
 class Chunk;
 
 class Block {
@@ -27,14 +23,8 @@ private:
    /// The ID of this block.
    BlockID blockID : 24;
 
-   /// Whether or not this block is currently visible.
-   bool visible : 1;
-
    /// Whether or not the bounding box of this block has been computed.
    mutable bool boundingBoxComputed : 1;
-
-   /// The model of this block.
-   Model *model;
 
    /// The model matrix of this block, including its position and rotation.
    glm::mat4 modelMatrix;
@@ -51,7 +41,6 @@ public:
 
    /// Create a block.
    Block(BlockID blockID,
-         Model *model,
          glm::vec3 position,
          glm::vec3 direction);
 
@@ -64,7 +53,7 @@ public:
    friend class Chunk;
 
 #  define MC_BLOCK(NAME)                                                   \
-   static Block create##NAME(Context &C,                                   \
+   static Block create##NAME(Application &app,                             \
                              glm::vec3 position,                           \
                              glm::vec3 direction = glm::vec3(0.0f,1.0f,0.0f));
 #  include "mineshaft/World/Blocks.def"
@@ -75,64 +64,39 @@ public:
    /// \return true iff this block is transparent.
    bool isTransparent() const { return isTransparent(blockID); }
 
+   /// \return true iff blocks of this kind are solid.
+   static bool isSolid(BlockID ID);
+
+   /// \return true iff this block is solid.
+   bool isSolid() const { return isSolid(blockID); }
+
    /// \return true iff this block uses different textures for each face.
    static bool usesCubeMap(BlockID ID);
 
    /// \return true iff this block uses different textures for each face.
    bool usesCubeMap() const { return usesCubeMap(blockID); }
 
-   /// \return the texture index of the block.
-   static unsigned getTextureLayer(BlockID ID);
-
-   /// \return true iff this block uses different textures for each face.
-   unsigned getTextureLayer() const { return getTextureLayer(blockID); }
-
-   /// Load the block textures.
-   static TextureArray loadBlockTextures();
-
-   /// Load the block textures.
-   static TextureArray loadBlockCubeMapTextures();
-
-   /// \return true iff this block is visible.
-   bool isVisible() const { return visible; }
-
-   /// Set if this block should be visible.
-   void setVisible(bool v = true) { visible = v; }
-
    /// Describes the faces of a block that should be rendered.
    enum FaceMask {
       F_None    = 0x0,
-      F_Top     = 0x1,
-      F_Bottom  = 0x2,
-      F_Left    = 0x4,
-      F_Right   = 0x8,
+      F_Right   = 0x1,
+      F_Left    = 0x2,
+      F_Top     = 0x4,
+      F_Bottom  = 0x8,
       F_Front   = 0x10,
       F_Back    = 0x20,
 
       F_All     = F_Top | F_Bottom | F_Left | F_Right | F_Front | F_Back,
    };
 
-   /// Render this block.
-   void render(Context &C,
-               const glm::mat4 &viewProjectionMatrix) const;
+   /// \return The face at index i.
+   static FaceMask face(unsigned i) { return FaceMask(1 << i); }
 
-   /// Render this block with borders.
-   void renderWithBorders(Context &C,
-                          const glm::mat4 &viewProjectionMatrix,
-                          glm::vec4 borderColor) const;
+   /// \return the texture UV coordinates.
+   static glm::vec2 getTextureUV(BlockID ID, FaceMask face);
 
-   /// Render this block's normals
-   void renderNormals(Context &C,
-                      const glm::mat4 &viewProjectionMatrix,
-                      const glm::vec4 &normalColor) const;
-
-   /// Render the specified faces of this block.
-   void render(const Shader &shader,
-               const glm::mat4 &viewProjectionMatrix,
-               unsigned faceMask) const;
-
-   /// \return the model of this block.
-   Model *getModel() const { return model; }
+   /// \return the texture UV coordinates.
+   glm::vec2 getTextureUV(FaceMask face) const { return getTextureUV(blockID, face); }
 
    /// \return the model matrix of this block.
    const glm::mat4 &getModelMatrix() const { return modelMatrix; }

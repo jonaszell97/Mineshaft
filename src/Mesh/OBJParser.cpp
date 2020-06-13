@@ -1,7 +1,3 @@
-//
-// Created by Jonas Zell on 2019-01-17.
-//
-
 #include "OBJParser.h"
 #include "utils.h"
 

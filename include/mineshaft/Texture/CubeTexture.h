@@ -1,5 +1,5 @@
-#ifndef MINEKAMPF_CUBETEXTURE_H
-#define MINEKAMPF_CUBETEXTURE_H
+#ifndef MINESHAFT_CUBETEXTURE_H
+#define MINESHAFT_CUBETEXTURE_H
 
 #include <GL/glew.h>
 #include <SFML/Graphics.hpp>
@@ -23,4 +23,4 @@ public:
    GLuint getTextureID() const { return textureID; }
 };
 
-#endif //MINEKAMPF_CUBETEXTURE_H
+#endif //MINESHAFT_CUBETEXTURE_H

@@ -1,5 +1,5 @@
-#ifndef MINEKAMPF_OBJPARSER_H
-#define MINEKAMPF_OBJPARSER_H
+#ifndef MINESHAFT_OBJPARSER_H
+#define MINESHAFT_OBJPARSER_H
 
 #include "Mesh.h"
 
@@ -8,4 +8,4 @@
 
 llvm::Optional<Mesh> parseMesh(llvm::StringRef ObjFile);
 
-#endif //MINEKAMPF_OBJPARSER_H
+#endif //MINESHAFT_OBJPARSER_H

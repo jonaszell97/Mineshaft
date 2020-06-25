@@ -1,5 +1,5 @@
-#ifndef MINEKAMPF_CONTEXT_H
-#define MINEKAMPF_CONTEXT_H
+#ifndef MINESHAFT_CONTEXT_H
+#define MINESHAFT_CONTEXT_H
 
 #include "mineshaft/Camera.h"
 #include "mineshaft/Config.h"
@@ -241,4 +241,4 @@ inline void operator delete[](void *ptr, const mc::Application& Ctx,
    return Ctx.Deallocate(ptr);
 }
 
-#endif //MINEKAMPF_CONTEXT_H
+#endif //MINESHAFT_CONTEXT_H

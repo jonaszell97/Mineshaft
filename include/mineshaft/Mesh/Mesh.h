@@ -1,5 +1,5 @@
-#ifndef MINEKAMPF_MESH_H
-#define MINEKAMPF_MESH_H
+#ifndef MINESHAFT_MESH_H
+#define MINESHAFT_MESH_H
 
 #include "Texture/BasicTexture.h"
 
@@ -27,4 +27,4 @@ public:
    void dump() const;
 };
 
-#endif //MINEKAMPF_MESH_H
+#endif //MINESHAFT_MESH_H

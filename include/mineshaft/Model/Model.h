@@ -1,5 +1,5 @@
-#ifndef MINEKAMPF_MODEL_H
-#define MINEKAMPF_MODEL_H
+#ifndef MINESHAFT_MODEL_H
+#define MINESHAFT_MODEL_H
 
 #include "mineshaft/Texture/BasicTexture.h"
 #include "mineshaft/Shader/Shader.h"
@@ -294,4 +294,4 @@ struct hash<::mc::BoundingBox>
 
 } // namespace std
 
-#endif //MINEKAMPF_MODEL_H
+#endif //MINESHAFT_MODEL_H

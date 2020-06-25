@@ -1,5 +1,5 @@
-#ifndef MINEKAMPF_CAMERA_H
-#define MINEKAMPF_CAMERA_H
+#ifndef MINESHAFT_CAMERA_H
+#define MINESHAFT_CAMERA_H
 
 #include "mineshaft/Model/Model.h"
 
@@ -267,4 +267,4 @@ public:
 
 } // namespace mc
 
-#endif //MINEKAMPF_CAMERA_H
+#endif //MINESHAFT_CAMERA_H

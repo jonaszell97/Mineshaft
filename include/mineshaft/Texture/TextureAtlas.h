@@ -1,5 +1,5 @@
-#ifndef MINEKAMPF_MULTITEXTURE_H
-#define MINEKAMPF_MULTITEXTURE_H
+#ifndef MINESHAFT_MULTITEXTURE_H
+#define MINESHAFT_MULTITEXTURE_H
 
 #include "mineshaft/Texture/BasicTexture.h"
 
@@ -67,4 +67,4 @@ public:
 
 } // namespace mc
 
-#endif //MINEKAMPF_MULTITEXTURE_H
+#endif //MINESHAFT_MULTITEXTURE_H

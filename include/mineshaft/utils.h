@@ -1,5 +1,5 @@
-#ifndef MINEKAMPF_UTILS_H
-#define MINEKAMPF_UTILS_H
+#ifndef MINESHAFT_UTILS_H
+#define MINESHAFT_UTILS_H
 
 #include "mineshaft/Config.h"
 
@@ -156,4 +156,4 @@ llvm::raw_ostream &operator<<(llvm::raw_ostream &OS, const ChunkPosition &pos);
 
 } // namespace mc
 
-#endif //MINEKAMPF_UTILS_H
+#endif //MINESHAFT_UTILS_H

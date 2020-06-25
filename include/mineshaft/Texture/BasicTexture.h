@@ -1,5 +1,5 @@
-#ifndef MINEKAMPF_BASICTEXTURE_H
-#define MINEKAMPF_BASICTEXTURE_H
+#ifndef MINESHAFT_BASICTEXTURE_H
+#define MINESHAFT_BASICTEXTURE_H
 
 #include <GL/glew.h>
 #include <glm/glm.hpp>
@@ -70,4 +70,4 @@ struct Texture {
 
 } // namespace mc
 
-#endif //MINEKAMPF_BASICTEXTURE_H
+#endif //MINESHAFT_BASICTEXTURE_H

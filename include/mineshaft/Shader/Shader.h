@@ -1,5 +1,5 @@
-#ifndef MINEKAMPF_SHADER_H
-#define MINEKAMPF_SHADER_H
+#ifndef MINESHAFT_SHADER_H
+#define MINESHAFT_SHADER_H
 
 #include <GL/glew.h>
 #include <glm/glm.hpp>
@@ -73,4 +73,4 @@ public:
 
 } // namespace mc
 
-#endif //MINEKAMPF_SHADER_H
+#endif //MINESHAFT_SHADER_H
